@@ -44,7 +44,13 @@ const CONFIG = {
     ZOMBIE_ALERT_DURATION: 0.8,
     ZOMBIE_COLLIDER_RADIUS: 0.28,
     ZOMBIE_AVOID_PLAYER_RADIUS: 0.75,
-    ZOMBIE_FOLLOW_RADIUS: 5
+    ZOMBIE_FOLLOW_RADIUS: 5,
+    ANIMAL_SPEED_MIN: 0.5,
+    ANIMAL_SPEED_MAX: 1.1,
+    ANIMAL_ATTACK_RADIUS: 0.7,
+    ANIMAL_SIGHT_RADIUS: 4.6,
+    ANIMAL_HOVER_RADIUS: 0.85,
+    ANIMAL_FOLLOW_RADIUS: 5.4
 };
 
 const CELL_TYPES = {
@@ -215,6 +221,29 @@ const LOCAL_PEOPLE_EMOJIS = [
     '👨‍🔧', '👩‍🔧', '👨‍🎨', '👩‍🎨', '👨‍🍳', '👩‍🍳', '👨‍⚕️', '👩‍⚕️'
 ];
 
+const ANIMAL_CATALOG = {
+    deer: { emoji: '🦌', minHp: 2, maxHp: 4, aggressive: false, provokedAggro: true },
+    boar: { emoji: '🐗', minHp: 2, maxHp: 4, aggressive: false, provokedAggro: true },
+    wolf: { emoji: '🐺', minHp: 2, maxHp: 4, aggressive: true, provokedAggro: false },
+    rabbit: { emoji: '🐇', minHp: 1, maxHp: 2, aggressive: false, provokedAggro: false },
+    fox: { emoji: '🦊', minHp: 1, maxHp: 2, aggressive: false, provokedAggro: false },
+    chamois: { emoji: '🐐', minHp: 2, maxHp: 4, aggressive: false, provokedAggro: true },
+    eagle: { emoji: '🦅', minHp: 1, maxHp: 3, aggressive: false, provokedAggro: true },
+    mouflon: { emoji: '🐏', minHp: 2, maxHp: 4, aggressive: false, provokedAggro: true },
+    fish: { emoji: '🐟', minHp: 1, maxHp: 2, aggressive: false, provokedAggro: false },
+    otter: { emoji: '🦦', minHp: 1, maxHp: 3, aggressive: false, provokedAggro: false },
+    duck: { emoji: '🦆', minHp: 1, maxHp: 2, aggressive: false, provokedAggro: false }
+};
+
+const ANIMALS_BY_AREA = {
+    PLAIN: ['deer', 'rabbit', 'fox', 'wolf'],
+    FOREST: ['deer', 'boar', 'wolf'],
+    WATER: ['fish', 'otter', 'duck'],
+    MOUNTAIN: ['chamois', 'eagle', 'mouflon'],
+    VILLAGE: [],
+    CITY: []
+};
+
 const WORLD_TYPE_LABELS = {
     PLAIN: "Plains",
     FOREST: "Forest",
@@ -332,7 +361,9 @@ class Game {
         this.deathSources = [];
         this.localGrids = new Map();
         this.localPeople = new Map();
+        this.localAnimals = new Map();
         this.pendingZombieTransfers = [];
+        this.pendingAnimalTransfers = [];
         this.isPaused = true;
         this.isSleeping = false;
         this.deathSeverity = 0;
@@ -342,6 +373,7 @@ class Game {
         this.hoveredGroup = null; // Set of cells in currently hovered city group
         this.hoveredNpc = null;
         this.hoveredGrave = null;
+        this.hoveredAnimal = null;
         this.tooltip = document.getElementById('city-tooltip');
         this.gameOverScreen = document.getElementById('game-over-screen');
 
@@ -505,6 +537,7 @@ class Game {
 
     initGrid() {
         this.localGrids.clear();
+        this.localAnimals.clear();
         const weights = {
             PLAIN: parseInt(document.getElementById('slider-plain').value),
             FOREST: parseInt(document.getElementById('slider-forest').value),
@@ -1368,11 +1401,14 @@ class Game {
             offsetY = dy * (sizePx - shift);
 
             this.drawLocalGrid(this.viewTransition.fromX, this.viewTransition.fromY, -dx * shift, -dy * shift);
+            this.drawLocalAnimals(this.viewTransition.fromX, this.viewTransition.fromY, -dx * shift, -dy * shift);
             this.drawLocalPeople(this.viewTransition.fromX, this.viewTransition.fromY, -dx * shift, -dy * shift);
             this.drawLocalGrid(this.viewTransition.toX, this.viewTransition.toY, offsetX, offsetY);
+            this.drawLocalAnimals(this.viewTransition.toX, this.viewTransition.toY, offsetX, offsetY);
             this.drawLocalPeople(this.viewTransition.toX, this.viewTransition.toY, offsetX, offsetY);
         } else {
             this.drawLocalGrid(this.player.worldX, this.player.worldY, 0, 0);
+            this.drawLocalAnimals(this.player.worldX, this.player.worldY, 0, 0);
             this.drawLocalPeople(this.player.worldX, this.player.worldY, 0, 0);
         }
 
@@ -1563,6 +1599,63 @@ class Game {
         this.viewCtx.globalAlpha = 1.0;
     }
 
+    drawLocalAnimals(worldX, worldY, offsetX, offsetY) {
+        const cell = this.grid[worldY]?.[worldX];
+        if (!cell) return;
+        if (cell.type === 'VILLAGE' || cell.type === 'CITY') return;
+
+        const animals = this.getLocalAnimals(worldX, worldY);
+        if (!animals.length) return;
+        const fontSize = Math.max(12, this.viewCellSize * 0.68);
+        const hpBarWidth = this.viewCellSize * 0.55;
+        const hpBarHeight = Math.max(2, this.viewCellSize * 0.08);
+
+        for (const animal of animals) {
+            const bob = animal.isDead ? 0 : Math.sin((this.animationClock * 2.6) + animal.bobPhase) * this.viewCellSize * 0.02;
+            const px = (animal.x + 0.5) * this.viewCellSize + offsetX;
+            const py = (animal.y + 0.5) * this.viewCellSize + offsetY + bob;
+
+            this.viewCtx.globalAlpha = 0.95;
+            this.viewCtx.fillStyle = 'rgba(15, 23, 42, 0.4)';
+            this.viewCtx.beginPath();
+            this.viewCtx.ellipse(px, py + fontSize * 0.22, fontSize * 0.2, fontSize * 0.1, 0, 0, Math.PI * 2);
+            this.viewCtx.fill();
+
+            this.viewCtx.globalAlpha = 1.0;
+            this.viewCtx.textAlign = 'center';
+            this.viewCtx.textBaseline = 'middle';
+            this.viewCtx.font = `${fontSize}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Cormorant Garamond"`;
+            this.viewCtx.save();
+            this.viewCtx.lineWidth = Math.max(2, fontSize * 0.12);
+            this.viewCtx.strokeStyle = 'rgba(8, 10, 20, 0.85)';
+            const glyph = animal.isDead ? (animal.dropEmoji || '🦴') : animal.emoji;
+            this.viewCtx.strokeText(glyph, px, py);
+            this.viewCtx.shadowColor = 'rgba(248, 250, 252, 0.3)';
+            this.viewCtx.shadowBlur = Math.max(2, fontSize * 0.16);
+            this.viewCtx.fillText(glyph, px, py);
+            this.viewCtx.restore();
+
+            if (!animal.isDead && animal.alertTimer > 0) {
+                this.viewCtx.globalAlpha = 1.0;
+                this.viewCtx.fillStyle = '#f97316';
+                this.viewCtx.font = `${fontSize * 0.4}px "Cinzel","Cormorant Garamond","Outfit","Segoe UI"`;
+                this.viewCtx.fillText('ALERT', px, py - fontSize * 0.65);
+            }
+
+            if (!animal.isDead && animal.angryTimer > 0) {
+                this.viewCtx.globalAlpha = 1.0;
+                this.viewCtx.fillStyle = '#ef4444';
+                this.viewCtx.font = `${fontSize * 0.6}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"`;
+                this.viewCtx.fillText('💢', px, py - fontSize * 0.85);
+            }
+
+            if (!animal.isDead && animal.hp < animal.maxHp) {
+                this.drawHpBar(px, py - fontSize * 0.6, hpBarWidth, hpBarHeight, animal.hp, animal.maxHp, '#f97316');
+            }
+        }
+        this.viewCtx.globalAlpha = 1.0;
+    }
+
     updateLocalPeople(dt) {
         if (!this.started) return;
         const targets = [];
@@ -1696,6 +1789,99 @@ class Game {
         }
     }
 
+    updateAnimals(dt) {
+        if (!this.started) return;
+        if (this.isSleeping) return;
+        if (this.viewTransition && this.viewTransition.active) return;
+
+        const worldX = this.player.worldX;
+        const worldY = this.player.worldY;
+        const cell = this.grid[worldY]?.[worldX];
+        if (!cell || cell.type === 'VILLAGE' || cell.type === 'CITY') return;
+
+        const animals = this.getLocalAnimals(worldX, worldY);
+        if (!animals.length) return;
+        const grid = this.getLocalGrid(worldX, worldY);
+
+        for (const animal of animals) {
+            if (animal.isDead) continue;
+
+            if (animal.attackCooldown > 0) {
+                animal.attackCooldown = Math.max(0, animal.attackCooldown - dt);
+            }
+            if (animal.alertTimer > 0) {
+                animal.alertTimer = Math.max(0, animal.alertTimer - dt);
+            }
+            if (animal.angryTimer > 0) {
+                animal.angryTimer = Math.max(0, animal.angryTimer - dt);
+            }
+            if (animal.provokedTimer > 0) {
+                animal.provokedTimer = Math.max(0, animal.provokedTimer - dt);
+            }
+
+            const aggressive = animal.alwaysAggressive || animal.isProvoked;
+            if (aggressive && !animal.isAggro) {
+                animal.isAggro = true;
+                animal.alertTimer = CONFIG.NPC_ALERT_DURATION;
+                animal.angryTimer = 0.9;
+            } else if (!aggressive) {
+                animal.isAggro = false;
+            }
+            if (aggressive) {
+                const dx = this.player.localX - animal.x;
+                const dy = this.player.localY - animal.y;
+                const dist = Math.hypot(dx, dy);
+                this.moveAnimalToward(animal, grid, worldX, worldY, this.player.localX, this.player.localY, dt);
+                if (dist <= CONFIG.ANIMAL_ATTACK_RADIUS && animal.attackCooldown <= 0) {
+                    this.damagePlayer(1);
+                    animal.attackCooldown = 0.9;
+                }
+                continue;
+            }
+
+            if (animal.idle > 0) {
+                animal.idle = Math.max(0, animal.idle - dt);
+                if (animal.idle > 0) continue;
+            }
+
+            if (!animal.hasTarget) {
+                const radius = 4.5;
+                const target = this.findWalkableNearWithRng(worldX, worldY, grid, animal.random, animal.x, animal.y, radius);
+                if (!target) continue;
+                animal.tx = target.x;
+                animal.ty = target.y;
+                animal.hasTarget = true;
+            }
+
+            const dx = animal.tx - animal.x;
+            const dy = animal.ty - animal.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < 0.05) {
+                animal.x = animal.tx;
+                animal.y = animal.ty;
+                animal.hasTarget = false;
+                animal.idle = 0.6 + animal.random() * 2.2;
+                continue;
+            }
+
+            const step = animal.speed * dt;
+            const move = Math.min(step, dist);
+            const nx = animal.x + (dx / dist) * move;
+            const ny = animal.y + (dy / dist) * move;
+            const cellX = Math.floor(nx);
+            const cellY = Math.floor(ny);
+            const cellType = grid[cellY]?.[cellX];
+            if (!cellType || this.isBlockedCell(worldX, worldY, cellX, cellY, cellType)) {
+                animal.hasTarget = false;
+                animal.idle = 0.4 + animal.random() * 1.8;
+                continue;
+            }
+
+            animal.x = nx;
+            animal.y = ny;
+        }
+    }
+
     getLocalPeople(worldX, worldY, count) {
         const key = `${worldX},${worldY}`;
         const cell = this.grid[worldY]?.[worldX];
@@ -1750,6 +1936,84 @@ class Game {
 
         this.localPeople.set(key, { type, count, people });
         return people;
+    }
+
+    getLocalAnimals(worldX, worldY) {
+        const key = `${worldX},${worldY}`;
+        const cell = this.grid[worldY]?.[worldX];
+        const baseType = cell?.type || 'PLAIN';
+        if (baseType === 'CITY' || baseType === 'VILLAGE') return [];
+
+        const entry = this.localAnimals.get(key);
+        if (entry && entry.type === baseType) {
+            return entry.animals;
+        }
+
+        const animals = [];
+        const pool = ANIMALS_BY_AREA[baseType] || [];
+        if (!pool.length) {
+            this.localAnimals.set(key, { type: baseType, animals });
+            return animals;
+        }
+
+        const grid = this.getLocalGrid(worldX, worldY);
+        const seedBase = Math.floor(hash01(worldX, worldY, 7021) * 100000);
+        const rng = this.buildSeededRng(seedBase || 1);
+
+        const hasWolf = pool.includes('wolf') && rng() < 0.4;
+        const poolNoWolf = pool.filter((species) => species !== 'wolf');
+        const wolfPackSize = hasWolf ? (3 + Math.floor(rng() * 4)) : 0;
+        let totalCount = hasWolf ? wolfPackSize : (1 + Math.floor(rng() * 3));
+        totalCount = Math.max(1, totalCount);
+
+        for (let i = 0; i < totalCount; i++) {
+            let species = (hasWolf || poolNoWolf.length === 0)
+                ? pool[Math.floor(rng() * pool.length)]
+                : poolNoWolf[Math.floor(rng() * poolNoWolf.length)];
+            if (hasWolf && i < wolfPackSize) {
+                species = 'wolf';
+            }
+            const info = ANIMAL_CATALOG[species];
+            if (!info) continue;
+            let spawn = this.findRandomWalkableLocalCellWithRng(worldX, worldY, grid, rng)
+                || { x: (CONFIG.LOCAL_GRID_SIZE - 1) / 2, y: (CONFIG.LOCAL_GRID_SIZE - 1) / 2 };
+            const nearest = this.findNearestValidLocalCell(worldX, worldY, spawn.x, spawn.y);
+            if (nearest) {
+                spawn = { x: nearest.localX, y: nearest.localY };
+            }
+            const baseSpeed = CONFIG.ANIMAL_SPEED_MIN + rng() * (CONFIG.ANIMAL_SPEED_MAX - CONFIG.ANIMAL_SPEED_MIN);
+            const hp = info.minHp + Math.floor(rng() * (info.maxHp - info.minHp + 1));
+            animals.push({
+                x: spawn.x,
+                y: spawn.y,
+                tx: spawn.x,
+                ty: spawn.y,
+                hasTarget: false,
+                idle: rng() * 1.4,
+                speed: baseSpeed,
+                baseSpeed,
+                seed: seedBase + i,
+                bobPhase: rng() * Math.PI * 2,
+                random: rng,
+                emoji: info.emoji,
+                species,
+                hp,
+                maxHp: hp,
+                isDead: false,
+                alwaysAggressive: !!info.aggressive,
+                provokedAggro: !!info.provokedAggro,
+                isProvoked: false,
+                provokedTimer: 0,
+                attackCooldown: 0,
+                alertTimer: 0,
+                angryTimer: 0,
+                isAggro: false,
+                dropEmoji: null
+            });
+        }
+
+        this.localAnimals.set(key, { type: baseType, animals });
+        return animals;
     }
 
     getLocalPeopleCount(cell) {
@@ -1823,6 +2087,26 @@ class Game {
         }
         person.x = nx;
         person.y = ny;
+    }
+
+    moveAnimalToward(animal, grid, worldX, worldY, targetX, targetY, dt) {
+        const dx = targetX - animal.x;
+        const dy = targetY - animal.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.01) return;
+
+        const step = animal.speed * dt;
+        const move = Math.min(step, dist);
+        const nx = animal.x + (dx / dist) * move;
+        const ny = animal.y + (dy / dist) * move;
+        const cellX = Math.floor(nx);
+        const cellY = Math.floor(ny);
+        const cellType = grid[cellY]?.[cellX];
+        if (!cellType || this.isBlockedCell(worldX, worldY, cellX, cellY, cellType)) {
+            return;
+        }
+        animal.x = nx;
+        animal.y = ny;
     }
 
     findWalkableNearWithRng(worldX, worldY, grid, rng, originX, originY, radius) {
@@ -2420,7 +2704,9 @@ class Game {
             this.updatePlayer(dt);
             this.updateViewTransition(dt);
             this.updateLocalPeople(dt);
+            this.updateAnimals(dt);
             this.processPendingZombieTransfers(dt);
+            this.processPendingAnimalTransfers(dt);
             this.updateZombies(dt);
             this.render();
             requestAnimationFrame(loop);
@@ -2562,6 +2848,7 @@ class Game {
             const fromLocalX = this.player.localX + dx * size;
             const fromLocalY = this.player.localY + dy * size;
             this.transferZombiesBetweenAreas(startWorldX, startWorldY, worldX, worldY, dx, dy, fromLocalX, fromLocalY);
+            this.transferAnimalsBetweenAreas(startWorldX, startWorldY, worldX, worldY, dx, dy, fromLocalX, fromLocalY);
             this.viewTransition = {
                 active: true,
                 fromX: startWorldX,
@@ -2607,6 +2894,40 @@ class Game {
         }
     }
 
+    transferAnimalsBetweenAreas(fromX, fromY, toX, toY, dx, dy, playerFromLocalX, playerFromLocalY) {
+        const fromKey = `${fromX},${fromY}`;
+        const fromEntry = this.localAnimals.get(fromKey);
+        if (!fromEntry || !fromEntry.animals || fromEntry.animals.length === 0) return;
+
+        const size = CONFIG.LOCAL_GRID_SIZE;
+        const edgeOffset = 0.2;
+
+        for (let i = fromEntry.animals.length - 1; i >= 0; i--) {
+            const animal = fromEntry.animals[i];
+            if (animal.isDead) continue;
+            const aggressive = animal.alwaysAggressive || animal.isProvoked;
+            if (!aggressive) continue;
+            const distToPlayer = Math.hypot(animal.x - playerFromLocalX, animal.y - playerFromLocalY);
+            if (distToPlayer > CONFIG.ANIMAL_FOLLOW_RADIUS) continue;
+            fromEntry.animals.splice(i, 1);
+            const exitDist = dx !== 0
+                ? (dx > 0 ? (size - 1 - animal.x) : animal.x)
+                : (dy > 0 ? (size - 1 - animal.y) : animal.y);
+            const travelTime = Math.max(0, exitDist) / Math.max(0.2, animal.speed);
+            const entryX = dx > 0 ? edgeOffset : (dx < 0 ? size - 1 - edgeOffset : Math.max(edgeOffset, Math.min(size - 1 - edgeOffset, animal.x)));
+            const entryY = dy > 0 ? edgeOffset : (dy < 0 ? size - 1 - edgeOffset : Math.max(edgeOffset, Math.min(size - 1 - edgeOffset, animal.y)));
+
+            this.pendingAnimalTransfers.push({
+                animal,
+                toX,
+                toY,
+                timer: travelTime,
+                entryX,
+                entryY
+            });
+        }
+    }
+
     processPendingZombieTransfers(dt) {
         if (!this.pendingZombieTransfers.length) return;
         for (let i = this.pendingZombieTransfers.length - 1; i >= 0; i--) {
@@ -2643,6 +2964,38 @@ class Game {
             people.push(zombie);
 
             this.pendingZombieTransfers.splice(i, 1);
+        }
+    }
+
+    processPendingAnimalTransfers(dt) {
+        if (!this.pendingAnimalTransfers.length) return;
+        for (let i = this.pendingAnimalTransfers.length - 1; i >= 0; i--) {
+            const entry = this.pendingAnimalTransfers[i];
+            entry.timer -= dt;
+            if (entry.timer > 0) continue;
+
+            const cell = this.grid[entry.toY]?.[entry.toX];
+            if (!cell || cell.type === 'CITY' || cell.type === 'VILLAGE') {
+                this.pendingAnimalTransfers.splice(i, 1);
+                continue;
+            }
+
+            const animals = this.getLocalAnimals(entry.toX, entry.toY);
+            const animal = entry.animal;
+            let nx = Math.max(0.2, Math.min(CONFIG.LOCAL_GRID_SIZE - 1.2, entry.entryX));
+            let ny = Math.max(0.2, Math.min(CONFIG.LOCAL_GRID_SIZE - 1.2, entry.entryY));
+            const nearby = this.findNearestValidLocalCell(entry.toX, entry.toY, nx, ny);
+            if (nearby) {
+                nx = nearby.localX;
+                ny = nearby.localY;
+            }
+            animal.x = nx;
+            animal.y = ny;
+            animal.tx = nx;
+            animal.ty = ny;
+            animals.push(animal);
+
+            this.pendingAnimalTransfers.splice(i, 1);
         }
     }
 
@@ -2864,80 +3217,131 @@ class Game {
         const localY = (e.clientY - rect.top) / this.viewCellSize;
 
         const cell = this.grid[this.player.worldY]?.[this.player.worldX];
-        if (!cell || cell.population <= 0 || (cell.type !== 'VILLAGE' && cell.type !== 'CITY')) {
+        if (!cell) {
             this.clearNpcHover();
             return;
         }
 
-        const count = this.getLocalPeopleCount(cell);
-        if (count <= 0) {
-            this.clearNpcHover();
-            return;
-        }
+        if (cell.type === 'VILLAGE' || cell.type === 'CITY') {
+            if (cell.population <= 0) {
+                this.clearNpcHover();
+                return;
+            }
 
-        const people = this.getLocalPeople(this.player.worldX, this.player.worldY, count);
-        let closestAlive = null;
-        let closestAliveDist = CONFIG.NPC_HOVER_RADIUS;
-        let closestGrave = null;
-        let closestGraveDist = CONFIG.NPC_HOVER_RADIUS;
+            const count = this.getLocalPeopleCount(cell);
+            if (count <= 0) {
+                this.clearNpcHover();
+                return;
+            }
 
-        for (const person of people) {
-            const dx = person.x + 0.5 - localX;
-            const dy = person.y + 0.5 - localY;
-            const dist = Math.hypot(dx, dy);
-            if (person.isDead) {
-                if (person.hideGrave) {
+            const people = this.getLocalPeople(this.player.worldX, this.player.worldY, count);
+            let closestAlive = null;
+            let closestAliveDist = CONFIG.NPC_HOVER_RADIUS;
+            let closestGrave = null;
+            let closestGraveDist = CONFIG.NPC_HOVER_RADIUS;
+
+            for (const person of people) {
+                const dx = person.x + 0.5 - localX;
+                const dy = person.y + 0.5 - localY;
+                const dist = Math.hypot(dx, dy);
+                if (person.isDead) {
+                    if (person.hideGrave) {
+                        continue;
+                    }
+                    if (dist <= closestGraveDist) {
+                        closestGrave = person;
+                        closestGraveDist = dist;
+                    }
                     continue;
                 }
-                if (dist <= closestGraveDist) {
-                    closestGrave = person;
-                    closestGraveDist = dist;
+                if (person.isZombie) continue;
+                if (dist <= closestAliveDist) {
+                    closestAlive = person;
+                    closestAliveDist = dist;
                 }
-                continue;
             }
-            if (person.isZombie) continue;
-            if (dist <= closestAliveDist) {
-                closestAlive = person;
-                closestAliveDist = dist;
+
+            const canInteractAlive = closestAlive
+                && Math.hypot(this.player.localX - closestAlive.x, this.player.localY - closestAlive.y) <= CONFIG.NPC_INTERACT_RANGE;
+            const canInteractGrave = closestGrave
+                && Math.hypot(this.player.localX - closestGrave.x, this.player.localY - closestGrave.y) <= CONFIG.NPC_INTERACT_RANGE;
+
+            if (!canInteractAlive && !canInteractGrave) {
+                this.clearNpcHover();
+                return;
             }
-        }
 
-        const canInteractAlive = closestAlive
-            && Math.hypot(this.player.localX - closestAlive.x, this.player.localY - closestAlive.y) <= CONFIG.NPC_INTERACT_RANGE;
-        const canInteractGrave = closestGrave
-            && Math.hypot(this.player.localX - closestGrave.x, this.player.localY - closestGrave.y) <= CONFIG.NPC_INTERACT_RANGE;
+            const aliveIsCloser = canInteractAlive
+                && (!canInteractGrave || closestAliveDist <= closestGraveDist);
 
-        if (!canInteractAlive && !canInteractGrave) {
+            if (aliveIsCloser) {
+                this.hoveredNpc = { worldX: this.player.worldX, worldY: this.player.worldY, person: closestAlive };
+                this.hoveredGrave = null;
+                this.hoveredAnimal = null;
+                this.viewCanvas.classList.add('cursor-sword');
+                this.viewCanvas.classList.remove('cursor-curse');
+                return;
+            }
+
+            if (canInteractGrave) {
+                this.hoveredGrave = { worldX: this.player.worldX, worldY: this.player.worldY, person: closestGrave };
+                this.hoveredNpc = null;
+                this.hoveredAnimal = null;
+                this.viewCanvas.classList.add('cursor-curse');
+                this.viewCanvas.classList.remove('cursor-sword');
+                return;
+            }
+
             this.clearNpcHover();
             return;
         }
 
-        const aliveIsCloser = canInteractAlive
-            && (!canInteractGrave || closestAliveDist <= closestGraveDist);
+        const animals = this.getLocalAnimals(this.player.worldX, this.player.worldY);
+        if (!animals.length) {
+            this.clearNpcHover();
+            return;
+        }
+        let closestAnimal = null;
+        let closestDist = CONFIG.ANIMAL_HOVER_RADIUS;
+        for (const animal of animals) {
+            if (animal.isDead) continue;
+            const dx = animal.x + 0.5 - localX;
+            const dy = animal.y + 0.5 - localY;
+            const dist = Math.hypot(dx, dy);
+            if (dist <= closestDist) {
+                closestAnimal = animal;
+                closestDist = dist;
+            }
+        }
 
-        if (aliveIsCloser) {
-            this.hoveredNpc = { worldX: this.player.worldX, worldY: this.player.worldY, person: closestAlive };
-            this.hoveredGrave = null;
-            this.viewCanvas.classList.add('cursor-sword');
-            this.viewCanvas.classList.remove('cursor-curse');
+        const canInteractAnimal = closestAnimal
+            && Math.hypot(this.player.localX - closestAnimal.x, this.player.localY - closestAnimal.y) <= CONFIG.NPC_INTERACT_RANGE;
+
+        if (!canInteractAnimal) {
+            this.clearNpcHover();
             return;
         }
 
-        if (canInteractGrave) {
-            this.hoveredGrave = { worldX: this.player.worldX, worldY: this.player.worldY, person: closestGrave };
-            this.hoveredNpc = null;
-            this.viewCanvas.classList.add('cursor-curse');
-            this.viewCanvas.classList.remove('cursor-sword');
-            return;
-        }
-
-        this.clearNpcHover();
+        this.hoveredAnimal = { worldX: this.player.worldX, worldY: this.player.worldY, animal: closestAnimal };
+        this.hoveredNpc = null;
+        this.hoveredGrave = null;
+        this.viewCanvas.classList.add('cursor-sword');
+        this.viewCanvas.classList.remove('cursor-curse');
     }
 
     handleViewClick(e) {
         if (!this.started) return;
         if (this.isSleeping) return;
         if (this.viewMode !== 'game') return;
+        if (this.hoveredAnimal?.animal) {
+            const { animal } = this.hoveredAnimal;
+            const distToPlayer = Math.hypot(this.player.localX - animal.x, this.player.localY - animal.y);
+            if (distToPlayer <= CONFIG.NPC_INTERACT_RANGE) {
+                this.damageAnimal(animal, 1);
+            }
+            this.clearNpcHover();
+            return;
+        }
         if (this.hoveredGrave?.person) {
             this.raiseZombie(this.hoveredGrave.person);
             this.hoveredGrave = null;
@@ -2960,6 +3364,7 @@ class Game {
     clearNpcHover() {
         this.hoveredNpc = null;
         this.hoveredGrave = null;
+        this.hoveredAnimal = null;
         this.viewCanvas.classList.remove('cursor-sword');
         this.viewCanvas.classList.remove('cursor-curse');
     }
@@ -3054,6 +3459,30 @@ class Game {
         }
     }
 
+    damageAnimal(animal, amount) {
+        if (!animal || animal.isDead) return;
+        animal.hp = Math.max(0, animal.hp - amount);
+        if (animal.hp <= 0) {
+            this.killAnimal(animal);
+            return;
+        }
+        if (animal.provokedAggro) {
+            animal.isProvoked = true;
+            animal.provokedTimer = 999;
+            animal.speed = Math.min(CONFIG.ANIMAL_SPEED_MAX * 1.2, animal.baseSpeed * 1.4);
+        }
+    }
+
+    killAnimal(animal) {
+        if (!animal || animal.isDead) return;
+        animal.isDead = true;
+        animal.hp = 0;
+        animal.speed = 0;
+        animal.hasTarget = false;
+        animal.idle = 999;
+        animal.dropEmoji = Math.random() < 0.5 ? '🥩' : '🦴';
+    }
+
     damagePlayer(amount) {
         if (this.isSleeping) return;
         this.player.hp = Math.max(0, this.player.hp - amount);
@@ -3111,10 +3540,13 @@ class Game {
         this.input = { up: false, down: false, left: false, right: false };
         this.hoveredNpc = null;
         this.hoveredGrave = null;
+        this.hoveredAnimal = null;
         this.viewTransition = null;
         this.deathSources = [];
         this.localPeople.clear();
         this.localGrids.clear();
+        this.localAnimals.clear();
+        this.pendingAnimalTransfers = [];
         this.initGrid();
         this.spawnPlayer();
         this.player.hp = this.player.maxHp;
@@ -3167,6 +3599,9 @@ class Game {
         }
 
         const grid = this.getLocalGrid(this.player.worldX, this.player.worldY);
+        const animals = (cell.type === 'CITY' || cell.type === 'VILLAGE')
+            ? []
+            : this.getLocalAnimals(this.player.worldX, this.player.worldY);
 
         for (const zombie of people) {
             if (!zombie.isZombie) continue;
@@ -3187,20 +3622,39 @@ class Game {
 
             let target = null;
             let targetDist = CONFIG.ZOMBIE_SIGHT_RADIUS;
-            for (const person of people) {
-                if (person.isDead || person.isZombie) continue;
-                const pdx = person.x - zombie.x;
-                const pdy = person.y - zombie.y;
-                const d = Math.hypot(pdx, pdy);
+            let targetIsAnimal = false;
+
+            for (const animal of animals) {
+                if (animal.isDead) continue;
+                if (!(animal.alwaysAggressive || animal.isProvoked)) continue;
+                const adx = animal.x - zombie.x;
+                const ady = animal.y - zombie.y;
+                const d = Math.hypot(adx, ady);
                 if (d > targetDist) continue;
-                if (!this.hasLineOfSight(this.player.worldX, this.player.worldY, grid, zombie.x, zombie.y, person.x, person.y)) {
+                if (!this.hasLineOfSight(this.player.worldX, this.player.worldY, grid, zombie.x, zombie.y, animal.x, animal.y)) {
                     continue;
                 }
-                target = person;
+                target = animal;
                 targetDist = d;
+                targetIsAnimal = true;
             }
 
-            if (target && zombie.targetId !== target.id) {
+            if (!target) {
+                for (const person of people) {
+                    if (person.isDead || person.isZombie) continue;
+                    const pdx = person.x - zombie.x;
+                    const pdy = person.y - zombie.y;
+                    const d = Math.hypot(pdx, pdy);
+                    if (d > targetDist) continue;
+                    if (!this.hasLineOfSight(this.player.worldX, this.player.worldY, grid, zombie.x, zombie.y, person.x, person.y)) {
+                        continue;
+                    }
+                    target = person;
+                    targetDist = d;
+                }
+            }
+
+            if (target && !targetIsAnimal && zombie.targetId !== target.id) {
                 zombie.alertTimer = CONFIG.ZOMBIE_ALERT_DURATION;
                 zombie.angryTimer = 0.9;
                 zombie.targetId = target.id;
@@ -3274,9 +3728,13 @@ class Game {
             }
 
             if (target && targetDist <= CONFIG.ZOMBIE_ATTACK_RADIUS && zombie.attackCooldown <= 0) {
-                this.damageNpc(target, 1, this.player.worldX, this.player.worldY, 'zombie');
-                if (this.hoveredNpc?.person === target && target.isDead) {
-                    this.clearNpcHover();
+                if (targetIsAnimal) {
+                    this.damageAnimal(target, 1);
+                } else {
+                    this.damageNpc(target, 1, this.player.worldX, this.player.worldY, 'zombie');
+                    if (this.hoveredNpc?.person === target && target.isDead) {
+                        this.clearNpcHover();
+                    }
                 }
                 zombie.attackCooldown = 0.9;
             }
