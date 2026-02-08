@@ -10,6 +10,7 @@
 - Year counter displayed at the bottom of the screen (starts at year 1).
 - Kill counter (player + zombies) displayed next to the year.
 - Player wakes after a number of years equal to total kills.
+- World map fog of war with discovery state and patterned unrevealed tiles.
 
 ### Changed
 - Zombies no longer leave graves.
@@ -18,6 +19,8 @@
 - Player death now triggers a sleep period instead of game over; zombies are destroyed on sleep.
 - Wake location is the nearest non-city tile (initial search radius 3, then expanding).
 - UI warning label is now in English.
+- Game mode is now the default view mode on start.
+- Plains on the world map now render with the seedling emoji.
 
 ### Fixed
 - Zombies are repositioned out of colliders on spawn/transfer and auto‑unstuck if trapped.

@@ -48,7 +48,7 @@ const CONFIG = {
 };
 
 const CELL_TYPES = {
-    PLAIN: { emoji: '', sustainProduce: 0, sustainConsume: 0.1, color: '#050505' },
+    PLAIN: { emoji: '🌱', sustainProduce: 0, sustainConsume: 0.1, color: '#050505' },
     FOREST: { emoji: '🌲', sustainProduce: 2.0, sustainConsume: 0, color: '#0a2a0a' },
     WATER: { emoji: '🌊', sustainProduce: 1.5, sustainConsume: 0, color: '#0a1a2a' },
     VILLAGE: { emoji: '🏡', sustainProduce: 0, sustainConsume: 1.0, color: '#2a2a0a' },
@@ -284,6 +284,8 @@ class Cell {
         this.regionId = -1;
         this.targetSustain = 0; // For diffusion buffering
         this.cityName = null;
+        this.discovered = false;
+        this.discoveryAlpha = 0;
 
         // Random symbol for Plains
         this.symbol = Math.random() < 0.5 ? ',' : '.';
@@ -353,7 +355,7 @@ class Game {
         this.worldCellSize = CONFIG.CELL_SIZE;
         this.viewCellSize = CONFIG.VIEW_CELL_SIZE;
         this.input = { up: false, down: false, left: false, right: false };
-        this.viewMode = 'god';
+        this.viewMode = 'game';
         this.playerColliderRadius = 0.375; // in local cell units (75% diameter)
         this.player = {
             worldX: 0,
@@ -586,6 +588,32 @@ class Game {
             }
         }
         this.detectRegions();
+    }
+
+    discoverWorldCell(worldX, worldY) {
+        const cell = this.grid[worldY]?.[worldX];
+        if (!cell) return;
+        cell.discovered = true;
+        cell.discoveryAlpha = 1;
+    }
+
+    markDiscoveredStale() {
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                if (cell.discovered) {
+                    cell.discoveryAlpha = 0.5;
+                }
+            }
+        }
+    }
+
+    placePlayer(worldX, worldY, localX, localY) {
+        this.player.worldX = worldX;
+        this.player.worldY = worldY;
+        this.player.localX = localX;
+        this.player.localY = localY;
+        this.discoverWorldCell(worldX, worldY);
     }
 
     resize() {
@@ -1214,27 +1242,42 @@ class Game {
         for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
             for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
                 const cell = this.grid[y][x];
-                const typeData = CELL_TYPES[cell.type];
                 const px = x * this.worldCellSize;
                 const py = y * this.worldCellSize;
 
+                if (!cell.discovered) {
+                    this.worldCtx.save();
+                    this.worldCtx.globalAlpha = 1.0;
+                    this.worldCtx.fillStyle = '#050505';
+                    this.worldCtx.fillRect(px, py, this.worldCellSize, this.worldCellSize);
+                    this.worldCtx.globalAlpha = 0.25;
+                    this.worldCtx.strokeStyle = '#1b1b1b';
+                    this.worldCtx.lineWidth = Math.max(1, this.worldCellSize * 0.08);
+                    this.worldCtx.beginPath();
+                    for (let i = -1; i <= 3; i++) {
+                        const offset = i * (this.worldCellSize * 0.45);
+                        this.worldCtx.moveTo(px + offset, py);
+                        this.worldCtx.lineTo(px + offset + this.worldCellSize, py + this.worldCellSize);
+                    }
+                    this.worldCtx.stroke();
+                    this.worldCtx.restore();
+                    continue;
+                }
+
+                const typeData = CELL_TYPES[cell.type];
+                this.worldCtx.globalAlpha = Math.max(0.1, cell.discoveryAlpha || 1);
                 this.worldCtx.fillStyle = typeData.color;
                 this.worldCtx.fillRect(px, py, this.worldCellSize, this.worldCellSize);
 
                 this.worldCtx.font = `${this.worldCellSize * 0.7}px "Cormorant Garamond"`;
                 this.worldCtx.textAlign = 'center';
                 this.worldCtx.textBaseline = 'middle';
-                this.worldCtx.globalAlpha = 0.2 + (cell.stability * 0.8);
-                if (cell.type === 'PLAIN') {
-                    this.worldCtx.fillStyle = '#1a3a1a'; // Dim green symbol
-                    this.worldCtx.font = `italic ${this.worldCellSize * 0.5}px "Cormorant Garamond"`;
-                    this.worldCtx.fillText(cell.symbol, px + this.worldCellSize * 0.5, py + this.worldCellSize * 0.5);
-                } else {
-                    this.worldCtx.fillStyle = '#ffffff';
-                    this.worldCtx.fillText(typeData.emoji, px + this.worldCellSize * 0.5, py + this.worldCellSize * 0.5);
-                }
+                this.worldCtx.fillStyle = '#ffffff';
+                this.worldCtx.fillText(typeData.emoji, px + this.worldCellSize * 0.5, py + this.worldCellSize * 0.5);
             }
         }
+
+        this.worldCtx.globalAlpha = 1.0;
 
         // Render Death Sources
         this.deathSources.forEach(ds => {
@@ -2322,27 +2365,23 @@ class Game {
             const localX = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
             const localY = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
             if (!this.isPositionBlocked(worldX, worldY, localX, localY)) {
-                this.player.worldX = worldX;
-                this.player.worldY = worldY;
-                this.player.localX = localX;
-                this.player.localY = localY;
+                this.placePlayer(worldX, worldY, localX, localY);
                 return;
             }
         }
 
         const fallback = this.findAnyValidPlayerSpot();
         if (fallback) {
-            this.player.worldX = fallback.worldX;
-            this.player.worldY = fallback.worldY;
-            this.player.localX = fallback.localX;
-            this.player.localY = fallback.localY;
+            this.placePlayer(fallback.worldX, fallback.worldY, fallback.localX, fallback.localY);
             return;
         }
 
-        this.player.worldX = Math.floor(Math.random() * CONFIG.GRID_SIZE);
-        this.player.worldY = Math.floor(Math.random() * CONFIG.GRID_SIZE);
-        this.player.localX = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
-        this.player.localY = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+        this.placePlayer(
+            Math.floor(Math.random() * CONFIG.GRID_SIZE),
+            Math.floor(Math.random() * CONFIG.GRID_SIZE),
+            Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1),
+            Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1)
+        );
     }
 
     startAnimationLoop() {
@@ -2486,6 +2525,7 @@ class Game {
         this.player.worldY = worldY;
         this.player.localX = localX;
         this.player.localY = localY;
+        this.discoverWorldCell(worldX, worldY);
 
         if (worldX !== startWorldX || worldY !== startWorldY) {
             const dx = worldX - startWorldX;
@@ -2746,10 +2786,7 @@ class Game {
 
         const fallback = this.findAnyValidPlayerSpot();
         if (fallback) {
-            this.player.worldX = fallback.worldX;
-            this.player.worldY = fallback.worldY;
-            this.player.localX = fallback.localX;
-            this.player.localY = fallback.localY;
+            this.placePlayer(fallback.worldX, fallback.worldY, fallback.localX, fallback.localY);
             this.viewTransition = null;
         }
     }
@@ -2769,7 +2806,7 @@ class Game {
 
         const cell = (this.grid[this.mouseY] && this.grid[this.mouseY][this.mouseX]) ? this.grid[this.mouseY][this.mouseX] : null;
 
-        if (cell && (cell.type === 'VILLAGE' || cell.type === 'CITY') && cell.cityName) {
+        if (cell && cell.discovered && (cell.type === 'VILLAGE' || cell.type === 'CITY') && cell.cityName) {
             this.tooltip.innerText = cell.cityName;
             // Center tooltip above cursor
             this.tooltip.style.left = `${e.clientX}px`;
@@ -3067,6 +3104,7 @@ class Game {
         this.sleepYearsRemaining = this.killCount;
         this.deathWorldX = this.player.worldX;
         this.deathWorldY = this.player.worldY;
+        this.markDiscoveredStale();
         this.input = { up: false, down: false, left: false, right: false };
         this.clearNpcHover();
         this.viewTransition = null;
@@ -3230,10 +3268,7 @@ class Game {
     movePlayerOutsideCities() {
         const spot = this.findNonCityPlayerSpot() || this.findAnyValidPlayerSpot();
         if (spot) {
-            this.player.worldX = spot.worldX;
-            this.player.worldY = spot.worldY;
-            this.player.localX = spot.localX;
-            this.player.localY = spot.localY;
+            this.placePlayer(spot.worldX, spot.worldY, spot.localX, spot.localY);
             return;
         }
         this.spawnPlayer();
@@ -3286,10 +3321,7 @@ class Game {
         const originY = typeof this.deathWorldY === 'number' ? this.deathWorldY : this.player.worldY;
         const spot = this.findNearestNonCitySpot(originX, originY) || this.findNonCityPlayerSpot() || this.findAnyValidPlayerSpot();
         if (spot) {
-            this.player.worldX = spot.worldX;
-            this.player.worldY = spot.worldY;
-            this.player.localX = spot.localX;
-            this.player.localY = spot.localY;
+            this.placePlayer(spot.worldX, spot.worldY, spot.localX, spot.localY);
             return;
         }
         this.spawnPlayer();

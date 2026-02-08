@@ -70,7 +70,8 @@ Each turn runs in this order:
 Note: 1 TPS = 1 year per second, and each simulation turn advances the world by one year. Pause stops world evolution (cities/forests/etc.), but local actions (player, NPCs, zombies) still run.
 
 ## UI Notes
-- World map shows terrain types and stability via brightness/saturation.
+- World map shows terrain types with fog of war; undiscovered tiles are hidden and use a subtle pattern.
+- When the player dies, previously discovered tiles fade to 50% alpha until revisited.
 - Local view renders a detailed vignette based on the current world cell.
 - Hovering a village/city displays its name and highlights its whole agglomeration.
 - World map panel displays the current area type plus the Local View tile under the player.
