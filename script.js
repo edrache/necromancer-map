@@ -1,0 +1,1453 @@
+/**
+ * Necromancer Island - Core Script
+ */
+
+const CONFIG = {
+    GRID_SIZE: 20,
+    CELL_SIZE: 32,
+    LOCAL_GRID_SIZE: 20,
+    VIEW_CELL_SIZE: 28,
+    PLAYER_SPEED: 4.5, // cells per second in local view
+    VIEW_TRANSITION_DURATION: 0.22, // seconds
+    TURN_DURATION: 1000, // ms between automatic turns
+    DIFFUSION_RATE: 0.3,
+    CONSUMPTION_RATE: 0.5,
+    EXPANSION_THRESHOLD: 0.1,
+    REGRESSION_THRESHOLD: 0.3, // Added for new rules
+    STABILITY_DECAY: 0.05,
+    STABILITY_REGEN: 0.02,
+    DEATH_SEVERITY_THRESHOLD: 100,
+    MAX_CITY_SIZE: 25,
+    CITY_SIZE_DEMAND_SCALE: 0.04,
+    CITY_EXPANSION_CHANCE: 0.05,
+    FOREST_EXPANSION_CHANCE: 0.02,
+    CITY_FOREST_BURN_SUSTAIN: 3,
+    CITY_FOREST_BURN_STABILITY_COST: 0.06,
+    FOREST_REGROWTH_CHANCE: 0.008,
+    CITY_EROSION_STABILITY_COST: 0.08
+};
+
+const CELL_TYPES = {
+    PLAIN: { emoji: '', sustainProduce: 0, sustainConsume: 0.1, color: '#050505' },
+    FOREST: { emoji: '🌲', sustainProduce: 2.0, sustainConsume: 0, color: '#0a2a0a' },
+    WATER: { emoji: '🌊', sustainProduce: 1.5, sustainConsume: 0, color: '#0a1a2a' },
+    VILLAGE: { emoji: '🏡', sustainProduce: 0, sustainConsume: 1.0, color: '#2a2a0a' },
+    CITY: { emoji: '🏙️', sustainProduce: 0, sustainConsume: 3.0, color: '#2a0a2a' },
+    MOUNTAIN: { emoji: '⛰️', sustainProduce: 0, sustainConsume: 0, color: '#1a1a1a' }
+};
+
+const VILLAGE_NAME_LISTS = {
+    towns1: [
+        "Dallington", "Oakham", "Osgodby", "Goltho", "Hill End", "Denchworth", "Doddington Thorpe", "Stockerston",
+        "Caithness", "Sulby", "Lancaut", "Foston", "Fawcliff", "Edenham", "Foscote", "Furtho", "Hewland", "Minsden",
+        "Apuldram", "Brickendon", "Mawsley", "Leesthorpe", "Thrupp", "East Compton", "Worlingham", "Sauvey",
+        "Whitwell", "Willaston", "Skinnand", "Shorne", "Little Cowarn", "Lower Bullingham", "Keythorpe", "Betterton",
+        "Dylife", "Monkton", "Willows", "Freak's Ground", "East Stoke", "Wickham", "Horsepool", "Appletree",
+        "Papley", "Torpel", "Falconhurst", "Fleet Marston", "Rufford", "Bucklebury", "Thundridge", "Tidemills",
+        "Clopton", "Boxbury", "Tubney", "Kelmarsh", "Oswaldbeck", "Yester", "Knave Hill", "Little Lavington",
+        "Moor Green", "Wykeham", "Windridge", "ToxallChilstone", "South Heighton", "Bilby", "Eye Kettleby", "Gilston",
+        "Endloss Ditton", "Twyford", "Childwick", "Meering", "Sapperton", "Binnend", "Holdenby", "Oxwich",
+        "Over Colwick", "Pipewell", "Broadmead", "Wyld Court", "Kinoulton", "Barrowby", "Wakely", "Falcutt",
+        "Wistow", "Inglewood", "Sudwelle", "Dembleby", "Emberton", "Moorhouse", "Holt", "Great Purston",
+        "Nether Catesby", "Little Gringley", "Easington", "Woodcoates"
+    ],
+    towns2: [
+        "Stapleford", "Nether Chalford", "Thoresby", "Ringstone", "Holme Lacy", "Starmore", "Tyneham", "Dornford",
+        "Cotton Mill", "Henwick", "Hawkshaw", "Atterton", "Lindley", "Westcotes", "Witherley", "Bordesden",
+        "Stanstead Abbots", "Marwood", "Lilford", "Fakenham Parva", "Ichetone", "Astwell", "Hardwick", "Farworth",
+        "Carburton", "Hundatora", "Asterleigh", "Knaptoft", "Crastell", "Braunstonbury", "Newton Purcell", "uenby",
+        "Tusmore", "Westerby", "Murcott", "Frogmire", "Brentingby", "Bolham", "Wyham", "Haughton", "Kilvington",
+        "Ganthorpe", "High Worsall", "Keighton", "Newbottle", "Brookenby", "Burrough Hill", "Maidencourt", "Rattray",
+        "East Shefford", "Great Munden", "Enstone", "Wiverton", "Frovie", "Odstone", "Hoarwithy", "Badsaddle",
+        "Kincardine", "Gilroes", "Manxey", "Gatton", "Baggrave", "West Laughton", "Exceat", "Welham", "Wharram",
+        "Eastbridge", "Welby", "Rutland", "Althorp", "Henderskelf", "Humberstone", "Orgarswick", "South Marefield",
+        "Beacon Hill", "Skipsea", "Wordwell", "East Chilwell", "Doddershall", "Shuart", "Stuchbury", "Holbeck",
+        "Easton Bavents", "Mardley", "Preston Deanery", "Osberton", "Southerham", "Kettlebaston", "Greenbooth",
+        "Wollenwick", "Burston", "Sibberton", "Othorpe", "Andreskirk", "Chaddleworth", "Gillethorp", "Thorpe",
+        "Netone", "Thurmaston", "Willoughby"
+    ],
+    towns3: [
+        "Carswell", "Radley", "Nether Adber", "Brookend", "Hoston", "Cumbria", "Erringham", "Upper Catesby",
+        "Peeblesshire", "Winwick", "Field Burcote", "Caswell", "Trafford", "North Stoke", "Strixton", "Quickswood",
+        "Berehill", "Kilpeck", "Chaldean", "Charwelton", "Flawford", "Fawsley", "Whatborough", "Ossington",
+        "Sapeham", "Lubenham", "Bricewold", "Calme", "Midley", "Wothorpe", "Hale", "Fairhurst", "Imber",
+        "Dodyngton", "Wain Wood", "Lewarewich", "Wootton", "Bigging", "Exton", "Wyck", "Newsells", "Faxton",
+        "Old Jedward", "Winterborne Farringdon", "Woburn", "Nobottle", "Garendon", "Bradgate", "Barpham", "Weald",
+        "Gartree", "Paddlesworth", "Hixham", "Gubblecote", "Langford", "Ringsthorpe", "Laythorpe", "Napsbury",
+        "Rutherford", "Venonnis", "Stonebury", "Hygham", "West Whykeham", "Draycott", "Kilwardby", "Barcote",
+        "Milton", "Newton", "Stormsworth", "Lordington", "Rycote", "Canons Ashby", "Stevenage", "Doveland",
+        "Wintringham", "Wellbury", "Dode", "Swanston", "Tiscott", "Elmesthorpe", "Pendley", "Warby", "Hound Tor",
+        "Shalford", "East Lothian", "Mirabel", "Duns", "Hanstead", "Cestersover", "Bockenfield", "Swinbrook",
+        "Gainsthorpe", "Bockhampton", "Broxtowe", "Dartmoor", "Tomley", "Serlby", "Little Oxendon"
+    ],
+    towns4: [
+        "Westthorpe", "Whittington", "Fairfield", "Wiltshire", "Normanton", "Hainstone", "North Marefield",
+        "Poyningstown", "Onley", "West Backworth", "Wolfhampcote", "Parbold", "Waterton", "Westrill", "Hallowtree",
+        "Throcking", "Bittesby", "Streethill", "Washingley", "Brime", "Berkeden", "Burghley", "Brightwell",
+        "Stagenhoe", "Wellsborough", "Moreton", "Howgrave", "Kitts End", "Upper Ditchford", "Broadbusk",
+        "Colston Basset", "Studmarsh", "Lubbesthorpe", "Wandon", "Lowfield Heath", "Fleecethorpe", "Burton",
+        "Babworth", "Glassthorpe", "Wacton", "Findhorn", "Elkington", "Nafferton", "Silkby", "Galloways",
+        "Tinwell", "Seawell", "Elmington", "Roxton", "Northeye", "Withcote", "Plumtree", "Roxburgh", "Walcot",
+        "Stanford", "Shottesbrooke", "Bitteswell", "Moray", "Fife", "Perching", "Northwick", "Seacourt", "Knuston",
+        "South Wheatley", "Hothorpe", "Stanmer", "Wymondham", "Newbold", "Ulnaby", "Langton", "Dishley", "Foxley",
+        "Upton", "Aldwick", "Broadfield", "Cratendune", "Morwellham Quay", "Mardale", "Kirby", "Whatcombe", "Whenham",
+        "Misterton", "Wainscarre", "Flaunden", "Armston", "Addingrove", "Knapthorpe", "Whimpton", "Libury",
+        "Snittlegarth", "Dunningworth", "Brooksby", "Cuddington", "Langley", "Hempshill", "Old Shoreham", "Lowesby",
+        "Stroud", "Naneby"
+    ],
+    ironswornA: [
+        "Bleak", "Green", "Wolf", "Raven", "Gray", "Red", "Axe", "Great", "Wood", "Low", "White", "Storm", "Black",
+        "Mourn", "New", "Stone", "Grim", "Lost", "High", "Rock", "Shield", "Sword", "Frost", "Thorn", "Long"
+    ],
+    ironswornB: [
+        "moor", "ford", "crag", "watch", "hope", "wood", "ridge", "stone", "haven", "fall(s)", "river", "field",
+        "hill", "bridge", "mark", "cairn", "land", "hall", "mount", "rock", "brook", "barrow", "stead", "home", "wick"
+    ]
+};
+
+const VILLAGE_NAME_WEIGHTS = [
+    { type: 'list', list: 'towns1', weight: 1 },
+    { type: 'list', list: 'towns2', weight: 1 },
+    { type: 'list', list: 'towns3', weight: 1 },
+    { type: 'list', list: 'towns4', weight: 1 },
+    { type: 'ironsworn', weight: 5 }
+];
+
+const CITY_PREFIX_WORDS = [
+    "New",
+    "Next",
+    "Neo",
+    "Nova",
+    "Ebon",
+    "Elder",
+    "Ashen",
+    "Dusk",
+    "Shadow",
+    "Frost",
+    "Iron",
+    "Raven",
+    "Wolf",
+    "Thorn",
+    "Wyrd",
+    "Grim",
+    "Hallow",
+    "Black",
+    "Silver",
+    "Storm",
+    "Dawn",
+    "Blood"
+];
+
+function pickWeighted(items) {
+    const total = items.reduce((sum, item) => sum + item.weight, 0);
+    let roll = Math.random() * total;
+    for (const item of items) {
+        roll -= item.weight;
+        if (roll <= 0) return item;
+    }
+    return items[items.length - 1];
+}
+
+function pickFromWeights(weightMap) {
+    const entries = Object.entries(weightMap).map(([type, weight]) => ({ type, weight }));
+    const chosen = pickWeighted(entries);
+    return chosen.type;
+}
+
+const LOCAL_BASE_WEIGHTS = {
+    PLAIN: { PLAIN: 0.72, FOREST: 0.15, WATER: 0.06, MOUNTAIN: 0.07 },
+    FOREST: { FOREST: 0.7, PLAIN: 0.18, WATER: 0.05, MOUNTAIN: 0.07 },
+    WATER: { WATER: 0.7, PLAIN: 0.18, FOREST: 0.06, MOUNTAIN: 0.06 },
+    MOUNTAIN: { MOUNTAIN: 0.68, PLAIN: 0.2, FOREST: 0.06, WATER: 0.06 },
+    VILLAGE: { PLAIN: 0.7, FOREST: 0.12, WATER: 0.08, MOUNTAIN: 0.05, VILLAGE: 0.05 },
+    CITY: { PLAIN: 0.6, FOREST: 0.1, WATER: 0.1, MOUNTAIN: 0.05, CITY: 0.15 }
+};
+
+function expandOptionalSuffix(value) {
+    if (!value.includes("(s)")) return value;
+    return Math.random() < 0.5 ? value.replace("(s)", "") : value.replace("(s)", "s");
+}
+
+function generateVillageName() {
+    const choice = pickWeighted(VILLAGE_NAME_WEIGHTS);
+    if (choice.type === 'list') {
+        const list = VILLAGE_NAME_LISTS[choice.list];
+        return list[Math.floor(Math.random() * list.length)];
+    }
+    const a = VILLAGE_NAME_LISTS.ironswornA[Math.floor(Math.random() * VILLAGE_NAME_LISTS.ironswornA.length)];
+    const bRaw = VILLAGE_NAME_LISTS.ironswornB[Math.floor(Math.random() * VILLAGE_NAME_LISTS.ironswornB.length)];
+    const b = expandOptionalSuffix(bRaw);
+    return `${a}${b}`;
+}
+
+function stripKnownPrefixWord(name) {
+    if (!name) return "";
+    const parts = name.split(" ");
+    if (parts.length <= 1) return name;
+    const first = parts[0];
+    if (CITY_PREFIX_WORDS.includes(first)) {
+        return parts.slice(1).join(" ");
+    }
+    return name;
+}
+
+function generateDerivedName(baseName, existingNames) {
+    const base = stripKnownPrefixWord(baseName);
+    for (let i = 0; i < 25; i++) {
+        const prefix = CITY_PREFIX_WORDS[Math.floor(Math.random() * CITY_PREFIX_WORDS.length)];
+        const candidate = `${prefix} ${base}`;
+        if (candidate !== baseName && !existingNames.has(candidate)) {
+            return candidate;
+        }
+    }
+    return `New ${base}`;
+}
+
+class Cell {
+    constructor(x, y, type = 'PLAIN') {
+        this.x = x;
+        this.y = y;
+        this.type = type;
+        this.population = (type === 'VILLAGE') ? 10 : (type === 'CITY' ? 50 : 0);
+        this.sustain = 0;
+        this.stability = 1.0;
+        this.targetSustain = 0; // For diffusion buffering
+        this.cityName = null;
+
+        // Random symbol for Plains
+        this.symbol = Math.random() < 0.5 ? ',' : '.';
+    }
+}
+
+class Region {
+    constructor() {
+        this.cells = [];
+        this.sustainCapacity = 0;
+        this.populationDemand = 0;
+        this.deathSeverity = 0;
+        this.stability = 1.0;
+    }
+
+    calculateMetrics() {
+        this.sustainCapacity = 0;
+        this.populationDemand = 0;
+        this.cells.forEach(cell => {
+            const typeData = CELL_TYPES[cell.type];
+            this.sustainCapacity += typeData.sustainProduce;
+            this.populationDemand += (cell.population * CONFIG.CONSUMPTION_RATE);
+        });
+    }
+}
+
+class DeathSource {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.turnsLeft = 5;
+    }
+}
+
+class Game {
+    constructor() {
+        this.worldCanvas = document.getElementById('world-canvas');
+        this.viewCanvas = document.getElementById('view-canvas');
+        this.worldCtx = this.worldCanvas.getContext('2d');
+        this.viewCtx = this.viewCanvas.getContext('2d');
+        this.grid = [];
+        this.regions = [];
+        this.deathSources = [];
+        this.localGrids = new Map();
+        this.isPaused = true;
+        this.isDead = false;
+        this.deathSeverity = 0;
+        this.deathTurnsRemaining = 0;
+        this.mouseX = 0;
+        this.mouseY = 0;
+        this.hoveredGroup = null; // Set of cells in currently hovered city group
+        this.tooltip = document.getElementById('city-tooltip');
+
+        this.tps = 1;
+        this.started = false;
+        this.worldCellSize = CONFIG.CELL_SIZE;
+        this.viewCellSize = CONFIG.VIEW_CELL_SIZE;
+        this.input = { up: false, down: false, left: false, right: false };
+        this.player = {
+            worldX: 0,
+            worldY: 0,
+            localX: 0,
+            localY: 0
+        };
+        this.viewTransition = null;
+        this.lastFrameTime = performance.now();
+
+        this.initGrid();
+        this.initSliders();
+        this.initTimeControls();
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            this.initGrid(); // Re-initialize with current slider values
+            this.spawnPlayer();
+            this.started = true;
+            this.start();
+            document.getElementById('start-screen').classList.add('hidden');
+        });
+
+        // Interactions
+        this.worldCanvas.addEventListener('mousedown', (e) => this.handleClick(e));
+        this.worldCanvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        window.addEventListener('keyup', (e) => this.handleKeyUp(e));
+
+        this.render();
+        this.startAnimationLoop();
+    }
+
+    initTimeControls() {
+        const pauseBtn = document.getElementById('pause-btn');
+        const tpsSlider = document.getElementById('tps-slider');
+        const tpsDisplay = document.getElementById('tps-display');
+        const speedBtns = document.querySelectorAll('.speed-btn');
+
+        pauseBtn.addEventListener('click', () => this.togglePause());
+
+        tpsSlider.addEventListener('input', () => {
+            this.setSpeed(parseInt(tpsSlider.value));
+        });
+
+        speedBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.setSpeed(parseInt(btn.dataset.speed));
+            });
+        });
+    }
+
+    togglePause() {
+        this.isPaused = !this.isPaused;
+        const pauseBtn = document.getElementById('pause-btn');
+        pauseBtn.innerText = this.isPaused ? '▶️' : '⏸';
+        if (!this.isPaused) {
+            this.gameLoop();
+        }
+    }
+
+    setSpeed(tps) {
+        this.tps = tps;
+        document.getElementById('tps-slider').value = tps;
+        document.getElementById('tps-display').innerText = `${tps} TPS`;
+
+        // Update active class on buttons
+        document.querySelectorAll('.speed-btn').forEach(btn => {
+            if (parseInt(btn.dataset.speed) === tps) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
+    initSliders() {
+        const sliders = {
+            'slider-plain': 'PLAIN',
+            'slider-forest': 'FOREST',
+            'slider-water': 'WATER',
+            'slider-city': 'CITY',
+            'slider-mountain': 'MOUNTAIN'
+        };
+
+        Object.keys(sliders).forEach(id => {
+            const el = document.getElementById(id);
+            el.addEventListener('input', () => {
+                el.nextElementSibling.innerText = el.value;
+            });
+        });
+    }
+
+    initGrid() {
+        this.localGrids.clear();
+        const weights = {
+            PLAIN: parseInt(document.getElementById('slider-plain').value),
+            FOREST: parseInt(document.getElementById('slider-forest').value),
+            WATER: parseInt(document.getElementById('slider-water').value),
+            CITY: parseInt(document.getElementById('slider-city').value),
+            MOUNTAIN: parseInt(document.getElementById('slider-mountain').value)
+        };
+
+        const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
+
+        // Normalize weights
+        const normalizedWeights = {};
+        let cumulative = 0;
+        for (const type in weights) {
+            cumulative += weights[type] / totalWeight;
+            normalizedWeights[type] = cumulative;
+        }
+
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            this.grid[y] = [];
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                let type = 'PLAIN';
+                const rand = Math.random();
+
+                for (const t in normalizedWeights) {
+                    if (rand <= normalizedWeights[t]) {
+                        let selectedType = (t === 'CITY') ? 'VILLAGE' : t;
+
+                        if (selectedType === 'VILLAGE') {
+                            // Check neighbors to avoid placing cities too close
+                            let tooClose = false;
+                            for (let dy = -1; dy <= 1; dy++) {
+                                for (let dx = -1; dx <= 1; dx++) {
+                                    const nx = x + dx;
+                                    const ny = y + dy;
+                                    // Check grid boundary and existing cells
+                                    if (this.grid[ny] && this.grid[ny][nx]) {
+                                        const n = this.grid[ny][nx];
+                                        if (n.type === 'VILLAGE' || n.type === 'CITY') tooClose = true;
+                                    }
+                                }
+                            }
+                            type = tooClose ? 'PLAIN' : 'VILLAGE';
+                        } else {
+                            type = selectedType;
+                        }
+                        break;
+                    }
+                }
+
+                const cell = new Cell(x, y, type);
+                this.grid[y][x] = cell;
+            }
+        }
+
+        // Group cities and assign names
+        const visitedCity = new Set();
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                if (visitedCity.has(cell) || (cell.type !== 'VILLAGE' && cell.type !== 'CITY')) continue;
+
+                const group = [];
+                const queue = [cell];
+                visitedCity.add(cell);
+                const cityName = generateVillageName();
+
+                while (queue.length > 0) {
+                    const current = queue.shift();
+                    current.cityName = cityName;
+                    group.push(current);
+
+                    const allNeighbors = this.getAllNeighbors(current.x, current.y);
+                    allNeighbors.forEach(n => {
+                        if (!visitedCity.has(n) && (n.type === 'VILLAGE' || n.type === 'CITY')) {
+                            visitedCity.add(n);
+                            queue.push(n);
+                        }
+                    });
+                }
+            }
+        }
+        this.detectRegions();
+    }
+
+    resize() {
+        const maxPanelWidth = Math.min(window.innerWidth * 0.42, 540);
+        const maxPanelHeight = window.innerHeight * 0.8;
+        const worldCellSize = Math.floor(Math.min(
+            maxPanelWidth / CONFIG.GRID_SIZE,
+            maxPanelHeight / CONFIG.GRID_SIZE,
+            CONFIG.CELL_SIZE
+        ));
+        const viewCellSize = Math.floor(Math.min(
+            maxPanelWidth / CONFIG.LOCAL_GRID_SIZE,
+            maxPanelHeight / CONFIG.LOCAL_GRID_SIZE,
+            CONFIG.VIEW_CELL_SIZE
+        ));
+
+        this.worldCellSize = Math.max(10, worldCellSize);
+        this.viewCellSize = Math.max(10, viewCellSize);
+
+        this.worldCanvas.width = CONFIG.GRID_SIZE * this.worldCellSize;
+        this.worldCanvas.height = CONFIG.GRID_SIZE * this.worldCellSize;
+        this.viewCanvas.width = CONFIG.LOCAL_GRID_SIZE * this.viewCellSize;
+        this.viewCanvas.height = CONFIG.LOCAL_GRID_SIZE * this.viewCellSize;
+    }
+
+    start() {
+        this.isPaused = false;
+        this.gameLoop();
+    }
+
+    gameLoop() {
+        if (this.isPaused) return;
+        this.step();
+
+        const delay = 1000 / this.tps;
+        setTimeout(() => this.gameLoop(), delay);
+    }
+
+    step() {
+        this.cityErosionThisTurn = new Set();
+        this.updateDeathSources();
+        this.produceSustain();
+        this.diffuseSustain();
+        this.updateCityGroupSizes();
+        this.consumeSustain();
+        this.regressionExpansion();
+        this.forestRegrowth();
+        this.updateCityNamesOnSplit();
+        this.detectRegions();
+        this.checkRepression();
+        this.updateUI();
+    }
+
+    updateDeathSources() {
+        for (let i = this.deathSources.length - 1; i >= 0; i--) {
+            const ds = this.deathSources[i];
+            ds.turnsLeft--;
+
+            // Reduce stability and kill population nearby
+            this.getNeighbors(ds.x, ds.y).forEach(n => {
+                n.stability = Math.max(0, n.stability - 0.2);
+                if (n.population > 0) {
+                    const killCount = Math.ceil(n.population * 0.2);
+                    n.population -= killCount;
+                    this.deathSeverity += killCount;
+                }
+            });
+
+            if (ds.turnsLeft <= 0) {
+                this.deathSources.splice(i, 1);
+            }
+        }
+    }
+
+    produceSustain() {
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                cell.sustain += CELL_TYPES[cell.type].sustainProduce;
+            }
+        }
+    }
+
+    diffuseSustain() {
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                if (cell.type !== 'FOREST' && cell.type !== 'WATER') continue;
+
+                let sum = cell.sustain;
+                let count = 1;
+                this.getNeighbors(x, y).forEach(n => {
+                    if (n.type === 'FOREST' || n.type === 'WATER') {
+                        sum += n.sustain;
+                        count++;
+                    }
+                });
+                cell.targetSustain = sum / count;
+            }
+        }
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                if (cell.type === 'FOREST' || cell.type === 'WATER') {
+                    cell.sustain = cell.sustain * (1 - CONFIG.DIFFUSION_RATE) + cell.targetSustain * CONFIG.DIFFUSION_RATE;
+                }
+            }
+        }
+    }
+
+    consumeSustain() {
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                const citySize = cell.citySize || 1;
+                const sizeMultiplier = 1 + Math.max(0, citySize - 1) * CONFIG.CITY_SIZE_DEMAND_SCALE;
+                const demand = cell.population * CONFIG.CONSUMPTION_RATE * sizeMultiplier;
+
+                let remaining = demand;
+
+                // Cities and villages draw sustain only from nearby forest/water (max distance 2).
+                if (cell.type === 'VILLAGE' || cell.type === 'CITY') {
+                    cell.sustain = 0;
+                    remaining = this.pullSustainFromSources(cell, remaining);
+                    if (remaining > 0 && cell.type === 'CITY') {
+                        remaining = this.burnForestsForSurvival(cell, remaining);
+                    }
+                } else if (cell.sustain >= remaining) {
+                    cell.sustain -= remaining;
+                    remaining = 0;
+                } else {
+                    remaining -= cell.sustain;
+                    cell.sustain = 0;
+                }
+
+                if (remaining <= 0) {
+                    cell.stability = Math.min(1.0, cell.stability + CONFIG.STABILITY_REGEN);
+                } else {
+                    const deficit = remaining;
+                    if (cell.population > 0) {
+                        const deaths = Math.ceil(deficit * 0.5);
+                        cell.population -= deaths;
+                        this.deathSeverity += (deaths * 0.1);
+                    }
+                    cell.stability = Math.max(0, cell.stability - CONFIG.STABILITY_DECAY);
+                    if (cell.type === 'CITY') {
+                        this.erodeCityGroup(cell);
+                    }
+                }
+
+                if (cell.population <= 0 && (cell.type === 'VILLAGE' || cell.type === 'CITY')) {
+                    cell.type = 'PLAIN';
+                    cell.population = 0;
+                    cell.symbol = Math.random() < 0.5 ? ',' : '.';
+                    cell.cityName = null;
+                }
+            }
+        }
+    }
+
+    regressionExpansion() {
+        // 1. Regression: forests or cities with low stability turn back into plains
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                if ((cell.type === 'FOREST' || cell.type === 'CITY') && cell.stability < CONFIG.REGRESSION_THRESHOLD) {
+                    if (Math.random() < 0.1) { // 10% chance per turn to regress
+                        cell.type = 'PLAIN';
+                        cell.population = 0;
+                        cell.symbol = Math.random() < 0.5 ? ',' : '.';
+                        cell.cityName = null;
+                    }
+                }
+            }
+        }
+
+        // 2. Expansion
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+
+                // Water never expands. Plains and Mountains don't expand.
+                if (cell.type === 'WATER' || cell.type === 'PLAIN' || cell.type === 'MOUNTAIN') continue;
+
+                if ((cell.type === 'VILLAGE' || cell.type === 'CITY') && (cell.citySize || 1) >= CONFIG.MAX_CITY_SIZE) {
+                    continue;
+                }
+
+                if (cell.stability > CONFIG.EXPANSION_THRESHOLD) {
+                    const neighbors = this.getNeighbors(x, y).filter(n => n.type === 'PLAIN');
+                    if (neighbors.length > 0) {
+                        const expansionChance = (cell.type === 'FOREST')
+                            ? CONFIG.FOREST_EXPANSION_CHANCE
+                            : CONFIG.CITY_EXPANSION_CHANCE;
+                        if (Math.random() >= expansionChance) continue;
+                        const target = neighbors[Math.floor(Math.random() * neighbors.length)];
+
+                        // Check if any neighbor (including diagonals) has a DIFFERENT city name
+                        let blockedByName = false;
+                        const allNeighbors = this.getAllNeighbors(target.x, target.y);
+                        for (const n of allNeighbors) {
+                            if ((n.type === 'VILLAGE' || n.type === 'CITY') && n.cityName !== cell.cityName) {
+                                blockedByName = true;
+                                break;
+                            }
+                        }
+
+                        if (blockedByName) continue;
+
+                        let canExpand = true;
+                        // Distance constraints
+                        if (cell.type === 'FOREST') {
+                            const sourceWaterDist = this.getMinDistanceToTypes(x, y, ['WATER']);
+                            const targetWaterDist = this.getMinDistanceToTypes(target.x, target.y, ['WATER']);
+                            if (sourceWaterDist > 3 || targetWaterDist > 3) {
+                                canExpand = false;
+                            }
+                        } else if (cell.type === 'CITY' || cell.type === 'VILLAGE') {
+                            if (!this.hasNearbyResourcePair(target.x, target.y, 2)) {
+                                canExpand = false;
+                            }
+                        }
+
+                        if (canExpand) {
+                            target.type = cell.type;
+                            target.population = (cell.type === 'VILLAGE' || cell.type === 'CITY') ? 5 : 0;
+                            target.stability = 0.5;
+                            target.cityName = cell.cityName;
+
+                            if (cell.type === 'CITY') {
+                                this.convertNearbyForestToPlain(target.x, target.y, 2);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pullSustainFromSources(cell, amountNeeded) {
+        if (amountNeeded <= 0) return 0;
+        const sources = this.getCellsWithinDistance(cell.x, cell.y, 2, (c) =>
+            c.type === 'FOREST' || c.type === 'WATER'
+        );
+        for (const source of sources) {
+            if (amountNeeded <= 0) break;
+            const take = Math.min(source.sustain, amountNeeded);
+            if (source.type === 'FOREST') {
+                source.sustain -= take;
+            }
+            amountNeeded -= take;
+        }
+        return amountNeeded;
+    }
+
+    burnForestsForSurvival(cell, amountNeeded) {
+        if (amountNeeded <= 0) return 0;
+        const forests = this.getCellsWithinDistance(cell.x, cell.y, 2, (c) => c.type === 'FOREST');
+        while (amountNeeded > 0 && forests.length > 0) {
+            const idx = Math.floor(Math.random() * forests.length);
+            const target = forests.splice(idx, 1)[0];
+            const yieldAmount = target.sustain + CONFIG.CITY_FOREST_BURN_SUSTAIN;
+            amountNeeded = Math.max(0, amountNeeded - yieldAmount);
+            target.type = 'PLAIN';
+            target.population = 0;
+            target.symbol = Math.random() < 0.5 ? ',' : '.';
+            target.cityName = null;
+            target.sustain = 0;
+            cell.stability = Math.max(0, cell.stability - CONFIG.CITY_FOREST_BURN_STABILITY_COST);
+        }
+        return amountNeeded;
+    }
+
+    convertNearbyForestToPlain(x, y, maxDist) {
+        const forests = this.getCellsWithinDistance(x, y, maxDist, (c) => c.type === 'FOREST');
+        if (forests.length === 0) return;
+        const target = forests[Math.floor(Math.random() * forests.length)];
+        target.type = 'PLAIN';
+        target.population = 0;
+        target.symbol = Math.random() < 0.5 ? ',' : '.';
+    }
+
+    getCellsWithinDistance(x, y, maxDist, predicate) {
+        const cells = [];
+        for (let cy = 0; cy < CONFIG.GRID_SIZE; cy++) {
+            for (let cx = 0; cx < CONFIG.GRID_SIZE; cx++) {
+                const dist = Math.abs(cx - x) + Math.abs(cy - y);
+                if (dist <= maxDist) {
+                    const cell = this.grid[cy][cx];
+                    if (!predicate || predicate(cell)) {
+                        cells.push(cell);
+                    }
+                }
+            }
+        }
+        return cells;
+    }
+
+    forestRegrowth() {
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                if (cell.type !== 'PLAIN') continue;
+                if (!this.hasNearbyResourcePair(x, y, 2)) continue;
+                if (Math.random() < CONFIG.FOREST_REGROWTH_CHANCE) {
+                    cell.type = 'FOREST';
+                    cell.population = 0;
+                    cell.stability = 0.5;
+                }
+            }
+        }
+    }
+
+    hasNearbyResourcePair(x, y, maxDist) {
+        const nearby = this.getCellsWithinDistance(x, y, maxDist);
+        let hasWater = false;
+        let hasForest = false;
+        for (const cell of nearby) {
+            if (cell.type === 'WATER') hasWater = true;
+            if (cell.type === 'FOREST') hasForest = true;
+            if (hasWater && hasForest) return true;
+        }
+        return false;
+    }
+
+    erodeCityGroup(cell) {
+        if (!cell.cityName) return;
+        if (this.cityErosionThisTurn.has(cell.cityName)) return;
+        const group = this.getCityGroup(cell);
+        if (group.length <= 1) return;
+
+        const groupSet = new Set(group);
+        const edgeCells = group.filter(c => {
+            const neighbors = this.getNeighbors(c.x, c.y);
+            return neighbors.some(n => !groupSet.has(n));
+        });
+
+        if (edgeCells.length === 0) return;
+        const target = edgeCells[Math.floor(Math.random() * edgeCells.length)];
+        if (target.type === 'CITY') {
+            target.type = 'VILLAGE';
+            target.population = Math.min(target.population, 5);
+            target.stability = Math.max(0, target.stability - CONFIG.CITY_EROSION_STABILITY_COST);
+        } else if (target.type === 'VILLAGE') {
+            target.type = 'PLAIN';
+            target.population = 0;
+            target.symbol = Math.random() < 0.5 ? ',' : '.';
+            target.cityName = null;
+        }
+        this.cityErosionThisTurn.add(cell.cityName);
+    }
+
+    updateCityGroupSizes() {
+        const visited = new Set();
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                if (cell.type === 'VILLAGE' || cell.type === 'CITY') {
+                    cell.citySize = 1;
+                } else {
+                    cell.citySize = 0;
+                }
+            }
+        }
+
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                if (visited.has(cell) || (cell.type !== 'VILLAGE' && cell.type !== 'CITY') || !cell.cityName) continue;
+
+                const queue = [cell];
+                const group = [];
+                visited.add(cell);
+
+                while (queue.length > 0) {
+                    const current = queue.shift();
+                    group.push(current);
+                    const neighbors = this.getAllNeighbors(current.x, current.y);
+                    neighbors.forEach(n => {
+                        if (!visited.has(n) && (n.type === 'VILLAGE' || n.type === 'CITY') && n.cityName === cell.cityName) {
+                            visited.add(n);
+                            queue.push(n);
+                        }
+                    });
+                }
+
+                const size = group.length;
+                group.forEach(n => {
+                    n.citySize = size;
+                });
+            }
+        }
+    }
+
+    updateCityNamesOnSplit() {
+        const visited = new Set();
+        const componentsByName = new Map();
+        const existingNames = new Set();
+
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                if (!(cell.type === 'VILLAGE' || cell.type === 'CITY') || !cell.cityName) continue;
+                existingNames.add(cell.cityName);
+                if (visited.has(cell)) continue;
+
+                const name = cell.cityName;
+                const component = [];
+                const queue = [cell];
+                visited.add(cell);
+
+                while (queue.length > 0) {
+                    const current = queue.shift();
+                    component.push(current);
+                    const neighbors = this.getAllNeighbors(current.x, current.y);
+                    neighbors.forEach(n => {
+                        if (!visited.has(n) && (n.type === 'VILLAGE' || n.type === 'CITY') && n.cityName === name) {
+                            visited.add(n);
+                            queue.push(n);
+                        }
+                    });
+                }
+
+                if (!componentsByName.has(name)) componentsByName.set(name, []);
+                componentsByName.get(name).push(component);
+            }
+        }
+
+        componentsByName.forEach((components, name) => {
+            if (components.length <= 1) return;
+
+            const minSize = Math.min(...components.map(c => c.length));
+            const candidates = components.filter(c => c.length === minSize);
+            const target = candidates[Math.floor(Math.random() * candidates.length)];
+
+            const newName = generateDerivedName(name, existingNames);
+            existingNames.add(newName);
+            target.forEach(cell => {
+                cell.cityName = newName;
+            });
+        });
+    }
+
+    getMinDistanceToTypes(startX, startY, targetTypes) {
+        let minDist = Infinity;
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                if (targetTypes.includes(this.grid[y][x].type)) {
+                    const dist = Math.abs(x - startX) + Math.abs(y - startY);
+                    if (dist < minDist) minDist = dist;
+                }
+            }
+        }
+        return minDist;
+    }
+
+    checkRepression() {
+        return;
+    }
+
+    getNeighbors(x, y) {
+        const neighbors = [];
+        const offsets = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+        offsets.forEach(([ox, oy]) => {
+            const nx = x + ox;
+            const ny = y + oy;
+            if (nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE) {
+                neighbors.push(this.grid[ny][nx]);
+            }
+        });
+        return neighbors;
+    }
+
+    getAllNeighbors(x, y) {
+        const neighbors = [];
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < CONFIG.GRID_SIZE && ny >= 0 && ny < CONFIG.GRID_SIZE) {
+                    neighbors.push(this.grid[ny][nx]);
+                }
+            }
+        }
+        return neighbors;
+    }
+
+    detectRegions() {
+        const visited = new Set();
+        this.regions = [];
+
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                if (visited.has(cell) || cell.type === 'MOUNTAIN' || cell.type === 'WATER') continue;
+
+                const region = new Region();
+                const queue = [cell];
+                visited.add(cell);
+
+                while (queue.length > 0) {
+                    const current = queue.shift();
+                    region.cells.push(current);
+
+                    this.getNeighbors(current.x, current.y).forEach(n => {
+                        if (!visited.has(n) && n.type !== 'MOUNTAIN' && n.type !== 'WATER') {
+                            visited.add(n);
+                            queue.push(n);
+                        }
+                    });
+                }
+                region.calculateMetrics();
+                this.regions.push(region);
+            }
+        }
+    }
+
+    updateUI() {
+        const status = document.getElementById('game-status');
+        if (this.regions.length > 0) {
+            const avgStability = this.regions.reduce((acc, r) => acc + r.stability, 0) / this.regions.length;
+            status.innerText = `World Stability: ${Math.round(avgStability * 100)}% | Regions: ${this.regions.length} | Severity: ${Math.floor(this.deathSeverity)}`;
+        }
+    }
+
+    render() {
+        this.renderWorld();
+        this.renderView();
+    }
+
+    renderWorld() {
+        this.worldCtx.clearRect(0, 0, this.worldCanvas.width, this.worldCanvas.height);
+
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y][x];
+                const typeData = CELL_TYPES[cell.type];
+                const px = x * this.worldCellSize;
+                const py = y * this.worldCellSize;
+
+                this.worldCtx.fillStyle = typeData.color;
+                this.worldCtx.fillRect(px, py, this.worldCellSize, this.worldCellSize);
+
+                this.worldCtx.font = `${this.worldCellSize * 0.7}px "Cormorant Garamond"`;
+                this.worldCtx.textAlign = 'center';
+                this.worldCtx.textBaseline = 'middle';
+                this.worldCtx.globalAlpha = 0.2 + (cell.stability * 0.8);
+                if (cell.type === 'PLAIN') {
+                    this.worldCtx.fillStyle = '#1a3a1a'; // Dim green symbol
+                    this.worldCtx.font = `italic ${this.worldCellSize * 0.5}px "Cormorant Garamond"`;
+                    this.worldCtx.fillText(cell.symbol, px + this.worldCellSize * 0.5, py + this.worldCellSize * 0.5);
+                } else {
+                    this.worldCtx.fillStyle = '#ffffff';
+                    this.worldCtx.fillText(typeData.emoji, px + this.worldCellSize * 0.5, py + this.worldCellSize * 0.5);
+                }
+            }
+        }
+
+        // Render Death Sources
+        this.deathSources.forEach(ds => {
+            this.worldCtx.font = `${this.worldCellSize * 0.5}px Arial`;
+            this.worldCtx.globalAlpha = 1.0;
+            this.worldCtx.fillText('💀', (ds.x + 0.5) * this.worldCellSize, (ds.y + 0.5) * this.worldCellSize);
+        });
+
+        // Render hovered city group highlight
+        if (this.hoveredGroup && this.hoveredGroup.length > 0) {
+            this.worldCtx.strokeStyle = '#2efcaf';
+            this.worldCtx.lineWidth = 2;
+            this.worldCtx.setLineDash([4, 4]); // Magical dashed line
+            this.worldCtx.beginPath();
+
+            const groupSet = new Set(this.hoveredGroup);
+            this.hoveredGroup.forEach(cell => {
+                const neighbors = [
+                    { dx: 0, dy: -1, edge: 'top' },
+                    { dx: 0, dy: 1, edge: 'bottom' },
+                    { dx: -1, dy: 0, edge: 'left' },
+                    { dx: 1, dy: 0, edge: 'right' }
+                ];
+
+                neighbors.forEach(n => {
+                    const nx = cell.x + n.dx;
+                    const ny = cell.y + n.dy;
+                    let isEdge = false;
+                    if (nx < 0 || nx >= CONFIG.GRID_SIZE || ny < 0 || ny >= CONFIG.GRID_SIZE) {
+                        isEdge = true;
+                    } else if (!groupSet.has(this.grid[ny][nx])) {
+                        isEdge = true;
+                    }
+
+                    if (isEdge) {
+                        const x = cell.x * this.worldCellSize;
+                        const y = cell.y * this.worldCellSize;
+                        const s = this.worldCellSize;
+
+                        if (n.edge === 'top') { this.worldCtx.moveTo(x, y); this.worldCtx.lineTo(x + s, y); }
+                        else if (n.edge === 'bottom') { this.worldCtx.moveTo(x, y + s); this.worldCtx.lineTo(x + s, y + s); }
+                        else if (n.edge === 'left') { this.worldCtx.moveTo(x, y); this.worldCtx.lineTo(x, y + s); }
+                        else if (n.edge === 'right') { this.worldCtx.moveTo(x + s, y); this.worldCtx.lineTo(x + s, y + s); }
+                    }
+                });
+            });
+            this.worldCtx.stroke();
+            this.worldCtx.setLineDash([]); // Reset
+        }
+
+        if (this.started) {
+            const cellX = this.player.worldX * this.worldCellSize;
+            const cellY = this.player.worldY * this.worldCellSize;
+            const inset = Math.max(2, this.worldCellSize * 0.08);
+
+            this.worldCtx.globalAlpha = 1.0;
+            this.worldCtx.strokeStyle = '#22c55e';
+            this.worldCtx.lineWidth = Math.max(2, this.worldCellSize * 0.08);
+            this.worldCtx.strokeRect(
+                cellX + inset,
+                cellY + inset,
+                this.worldCellSize - inset * 2,
+                this.worldCellSize - inset * 2
+            );
+        }
+
+        this.worldCtx.globalAlpha = 1.0;
+    }
+
+    renderView() {
+        this.viewCtx.clearRect(0, 0, this.viewCanvas.width, this.viewCanvas.height);
+        this.viewCtx.fillStyle = '#060608';
+        this.viewCtx.fillRect(0, 0, this.viewCanvas.width, this.viewCanvas.height);
+        if (!this.started) return;
+
+        const sizePx = CONFIG.LOCAL_GRID_SIZE * this.viewCellSize;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        if (this.viewTransition && this.viewTransition.active) {
+            const progress = this.viewTransition.progress;
+            const dx = this.viewTransition.dx;
+            const dy = this.viewTransition.dy;
+            const shift = progress * sizePx;
+
+            offsetX = dx * (sizePx - shift);
+            offsetY = dy * (sizePx - shift);
+
+            this.drawLocalGrid(this.viewTransition.fromX, this.viewTransition.fromY, -dx * shift, -dy * shift);
+            this.drawLocalGrid(this.viewTransition.toX, this.viewTransition.toY, offsetX, offsetY);
+        } else {
+            this.drawLocalGrid(this.player.worldX, this.player.worldY, 0, 0);
+        }
+
+        const playerPx = (this.player.localX + 0.5) * this.viewCellSize + offsetX;
+        const playerPy = (this.player.localY + 0.5) * this.viewCellSize + offsetY;
+        const radius = Math.max(6, this.viewCellSize * 0.28);
+
+        this.viewCtx.fillStyle = '#f8fafc';
+        this.viewCtx.beginPath();
+        this.viewCtx.arc(playerPx, playerPy, radius, 0, Math.PI * 2);
+        this.viewCtx.fill();
+        this.viewCtx.strokeStyle = '#22c55e';
+        this.viewCtx.lineWidth = 2;
+        this.viewCtx.stroke();
+    }
+
+    drawLocalGrid(worldX, worldY, offsetX, offsetY) {
+        const grid = this.getLocalGrid(worldX, worldY);
+        const symbolMap = {
+            PLAIN: '.',
+            FOREST: '🌲',
+            WATER: '≈',
+            MOUNTAIN: '^',
+            VILLAGE: '🏡',
+            CITY: '🏙️'
+        };
+        for (let y = 0; y < CONFIG.LOCAL_GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.LOCAL_GRID_SIZE; x++) {
+                const type = grid[y][x];
+                const px = x * this.viewCellSize + offsetX;
+                const py = y * this.viewCellSize + offsetY;
+                const symbol = symbolMap[type] || '.';
+
+                this.viewCtx.globalAlpha = 0.85;
+                this.viewCtx.textAlign = 'center';
+                this.viewCtx.textBaseline = 'middle';
+                if (symbol.length === 1) {
+                    this.viewCtx.fillStyle = '#cbd5f5';
+                    this.viewCtx.font = `italic ${this.viewCellSize * 0.45}px "Cormorant Garamond"`;
+                } else {
+                    this.viewCtx.fillStyle = '#ffffff';
+                    this.viewCtx.font = `${this.viewCellSize * 0.65}px "Cormorant Garamond"`;
+                }
+                this.viewCtx.fillText(symbol, px + this.viewCellSize * 0.5, py + this.viewCellSize * 0.5);
+                this.viewCtx.globalAlpha = 1.0;
+            }
+        }
+    }
+
+    getLocalGrid(worldX, worldY) {
+        const key = `${worldX},${worldY}`;
+        const baseType = this.grid[worldY][worldX].type;
+        const entry = this.localGrids.get(key);
+        if (entry && entry.type === baseType) return entry.grid;
+
+        const neighborTypes = this.getWorldNeighborTypes(worldX, worldY);
+        const grid = this.generateLocalGrid(baseType, neighborTypes);
+        this.localGrids.set(key, { type: baseType, grid });
+        return grid;
+    }
+
+    generateLocalGrid(baseType, neighborTypes) {
+        const weights = this.buildLocalWeights(baseType, neighborTypes);
+        const grid = [];
+        for (let y = 0; y < CONFIG.LOCAL_GRID_SIZE; y++) {
+            grid[y] = [];
+            for (let x = 0; x < CONFIG.LOCAL_GRID_SIZE; x++) {
+                grid[y][x] = pickFromWeights(weights);
+            }
+        }
+        if (baseType === 'VILLAGE' || baseType === 'CITY') {
+            const mid = Math.floor(CONFIG.LOCAL_GRID_SIZE / 2);
+            grid[mid][mid] = baseType;
+        }
+        return grid;
+    }
+
+    buildLocalWeights(baseType, neighborTypes) {
+        const base = LOCAL_BASE_WEIGHTS[baseType] || LOCAL_BASE_WEIGHTS.PLAIN;
+        const adjusted = { ...base };
+        neighborTypes.forEach(type => {
+            adjusted[type] = (adjusted[type] || 0) + 0.08;
+        });
+
+        const total = Object.values(adjusted).reduce((sum, v) => sum + v, 0) || 1;
+        Object.keys(adjusted).forEach(key => {
+            adjusted[key] = adjusted[key] / total;
+        });
+        return adjusted;
+    }
+
+    getWorldNeighborTypes(worldX, worldY) {
+        const types = [];
+        const neighbors = this.getNeighbors(worldX, worldY);
+        neighbors.forEach(cell => {
+            if (cell && cell.type) types.push(cell.type);
+        });
+        return types;
+    }
+
+    spawnPlayer() {
+        this.player.worldX = Math.floor(Math.random() * CONFIG.GRID_SIZE);
+        this.player.worldY = Math.floor(Math.random() * CONFIG.GRID_SIZE);
+        this.player.localX = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+        this.player.localY = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+    }
+
+    startAnimationLoop() {
+        const loop = (time) => {
+            const dt = Math.min(0.05, (time - this.lastFrameTime) / 1000);
+            this.lastFrameTime = time;
+            this.updatePlayer(dt);
+            this.updateViewTransition(dt);
+            this.render();
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    }
+
+    updatePlayer(dt) {
+        if (!this.started) return;
+        const dx = (this.input.right ? 1 : 0) - (this.input.left ? 1 : 0);
+        const dy = (this.input.down ? 1 : 0) - (this.input.up ? 1 : 0);
+        if (dx === 0 && dy === 0) return;
+
+        const length = Math.hypot(dx, dy) || 1;
+        const moveX = (dx / length) * CONFIG.PLAYER_SPEED * dt;
+        const moveY = (dy / length) * CONFIG.PLAYER_SPEED * dt;
+
+        this.player.localX += moveX;
+        this.player.localY += moveY;
+
+        this.handlePlayerWorldWrap();
+    }
+
+    handlePlayerWorldWrap() {
+        let moved = false;
+        let fromX = this.player.worldX;
+        let fromY = this.player.worldY;
+        let toX = this.player.worldX;
+        let toY = this.player.worldY;
+        let dx = 0;
+        let dy = 0;
+
+        if (this.player.localX < 0) {
+            if (this.player.worldX > 0) {
+                this.player.localX += CONFIG.LOCAL_GRID_SIZE;
+                this.player.worldX -= 1;
+                moved = true;
+                dx = -1;
+            } else {
+                this.player.localX = 0;
+            }
+        } else if (this.player.localX >= CONFIG.LOCAL_GRID_SIZE) {
+            if (this.player.worldX < CONFIG.GRID_SIZE - 1) {
+                this.player.localX -= CONFIG.LOCAL_GRID_SIZE;
+                this.player.worldX += 1;
+                moved = true;
+                dx = 1;
+            } else {
+                this.player.localX = CONFIG.LOCAL_GRID_SIZE - 0.01;
+            }
+        }
+
+        if (this.player.localY < 0) {
+            if (this.player.worldY > 0) {
+                this.player.localY += CONFIG.LOCAL_GRID_SIZE;
+                this.player.worldY -= 1;
+                moved = true;
+                dy = -1;
+            } else {
+                this.player.localY = 0;
+            }
+        } else if (this.player.localY >= CONFIG.LOCAL_GRID_SIZE) {
+            if (this.player.worldY < CONFIG.GRID_SIZE - 1) {
+                this.player.localY -= CONFIG.LOCAL_GRID_SIZE;
+                this.player.worldY += 1;
+                moved = true;
+                dy = 1;
+            } else {
+                this.player.localY = CONFIG.LOCAL_GRID_SIZE - 0.01;
+            }
+        }
+
+        if (moved) {
+            toX = this.player.worldX;
+            toY = this.player.worldY;
+            this.viewTransition = {
+                active: true,
+                fromX,
+                fromY,
+                toX,
+                toY,
+                dx,
+                dy,
+                progress: 0
+            };
+        }
+    }
+
+    updateViewTransition(dt) {
+        if (!this.viewTransition || !this.viewTransition.active) return;
+        this.viewTransition.progress += dt / CONFIG.VIEW_TRANSITION_DURATION;
+        if (this.viewTransition.progress >= 1) {
+            this.viewTransition.active = false;
+        }
+    }
+
+    handleMouseMove(e) {
+        const rect = this.worldCanvas.getBoundingClientRect();
+        this.mouseX = Math.floor((e.clientX - rect.left) / this.worldCellSize);
+        this.mouseY = Math.floor((e.clientY - rect.top) / this.worldCellSize);
+
+        const cell = (this.grid[this.mouseY] && this.grid[this.mouseY][this.mouseX]) ? this.grid[this.mouseY][this.mouseX] : null;
+
+        if (cell && (cell.type === 'VILLAGE' || cell.type === 'CITY') && cell.cityName) {
+            this.tooltip.innerText = cell.cityName;
+            // Center tooltip above cursor
+            this.tooltip.style.left = `${e.clientX}px`;
+            this.tooltip.style.top = `${e.clientY - 20}px`;
+            this.tooltip.classList.remove('hidden');
+
+            // Find all connected cells with same name
+            this.hoveredGroup = this.getCityGroup(cell);
+        } else {
+            this.tooltip.classList.add('hidden');
+            this.hoveredGroup = null;
+        }
+    }
+
+    getCityGroup(startCell) {
+        const group = [];
+        const queue = [startCell];
+        const visited = new Set([startCell]);
+
+        while (queue.length > 0) {
+            const current = queue.shift();
+            group.push(current);
+
+            const neighbors = this.getAllNeighbors(current.x, current.y);
+            neighbors.forEach(n => {
+                if (!visited.has(n) && (n.type === 'VILLAGE' || n.type === 'CITY') && n.cityName === startCell.cityName) {
+                    visited.add(n);
+                    queue.push(n);
+                }
+            });
+        }
+        return group;
+    }
+
+    handleClick(e) {
+        if (this.isPaused) return;
+        const rect = this.worldCanvas.getBoundingClientRect();
+        const x = Math.floor((e.clientX - rect.left) / this.worldCellSize);
+        const y = Math.floor((e.clientY - rect.top) / this.worldCellSize);
+
+        if (this.grid[y] && this.grid[y][x]) {
+            this.killCell(x, y);
+            this.renderWorld();
+        }
+    }
+
+    handleKeyDown(e) {
+        const key = e.key.toLowerCase();
+        if (key === 'w') { this.input.up = true; return; }
+        if (key === 's') { this.input.down = true; return; }
+        if (key === 'a') { this.input.left = true; return; }
+        if (key === 'd') {
+            if (e.shiftKey) {
+                this.handleKey(e);
+            } else {
+                this.input.right = true;
+            }
+            return;
+        }
+        this.handleKey(e);
+    }
+
+    handleKeyUp(e) {
+        const key = e.key.toLowerCase();
+        if (key === 'w') this.input.up = false;
+        if (key === 's') this.input.down = false;
+        if (key === 'a') this.input.left = false;
+        if (key === 'd') this.input.right = false;
+    }
+
+    handleKey(e) {
+        if (e.code === 'Space') {
+            e.preventDefault();
+            this.togglePause();
+        }
+        if (e.key === '1') this.setSpeed(1);
+        if (e.key === '2') this.setSpeed(2);
+        if (e.key === '3') this.setSpeed(5);
+        if (e.key === '4') this.setSpeed(10);
+
+        if (e.key === 'f') {
+            if (!document.fullscreenElement) {
+                this.worldCanvas.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        if (e.key.toLowerCase() === 'd' && e.shiftKey && !this.isPaused) {
+            if (this.grid[this.mouseY] && this.grid[this.mouseY][this.mouseX]) {
+                this.deathSources.push(new DeathSource(this.mouseX, this.mouseY));
+            }
+        }
+    }
+
+    killCell(x, y) {
+        const cell = this.grid[y][x];
+        if (cell.population > 0) {
+            this.deathSeverity += cell.population;
+            cell.population = 0;
+            cell.stability = 0;
+            if (cell.type === 'VILLAGE' || cell.type === 'CITY') {
+                cell.type = 'PLAIN';
+                cell.symbol = Math.random() < 0.5 ? ',' : '.';
+                cell.cityName = null;
+            }
+        } else {
+            cell.stability = Math.max(0, cell.stability - 0.5);
+            this.deathSeverity += 5;
+        }
+    }
+}
+
+const game = new Game();
+
+/**
+ * Skill Hooks
+ */
+window.advanceTime = (ms) => {
+    const turns = Math.floor(ms / CONFIG.TURN_DURATION);
+    for (let i = 0; i < turns; i++) {
+        game.step();
+    }
+    game.render();
+};
+
+window.render_game_to_text = () => {
+    const state = {
+        gridSize: CONFIG.GRID_SIZE,
+        deathSeverity: game.deathSeverity,
+        isPaused: game.isPaused,
+        sampleCells: [
+            game.grid[0][0],
+            game.grid[Math.floor(CONFIG.GRID_SIZE / 2)][Math.floor(CONFIG.GRID_SIZE / 2)]
+        ]
+    };
+    return JSON.stringify(state);
+};

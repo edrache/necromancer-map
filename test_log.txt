@@ -1,0 +1,13 @@
+browserType.launch: Executable doesn't exist at /Users/marek/Library/Caches/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-mac-arm64/chrome-headless-shell
+╔═════════════════════════════════════════════════════════════════════════╗
+║ Looks like Playwright Test or Playwright was just installed or updated. ║
+║ Please run the following command to download new browsers:              ║
+║                                                                         ║
+║     npx playwright install                                              ║
+║                                                                         ║
+║ <3 Playwright Team                                                      ║
+╚═════════════════════════════════════════════════════════════════════════╝
+    at main (/Users/marek/OfflineDocuments/Repo/Antigravity/Necromancer/skills/skills-openai/skills/.curated/develop-web-game/scripts/web_game_playwright_client.js:266:34)
+    at /Users/marek/OfflineDocuments/Repo/Antigravity/Necromancer/skills/skills-openai/skills/.curated/develop-web-game/scripts/web_game_playwright_client.js:353:1 {
+  name: 'Error'
+}

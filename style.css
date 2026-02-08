@@ -1,0 +1,565 @@
+:root {
+    /* Color Palette - Modern Mysticism */
+    --color-void: #030305;
+    --color-abyss: #0a0a0f;
+    --color-necromancy: #a855f7;
+    /* Royal Purple */
+    --color-toxic: #22c55e;
+    /* Vibrant Green */
+    --color-soul: #00f2ff;
+    /* Cyber Cyan */
+    --color-soul-glow: rgba(0, 242, 255, 0.4);
+    --color-blood: #ef4444;
+    /* Bright Red */
+    --color-blood-glow: rgba(239, 68, 68, 0.4);
+    --color-bone: #f1f5f9;
+    --color-parchment: rgba(15, 15, 25, 0.6);
+    --color-border: rgba(168, 85, 247, 0.2);
+    --color-accent: #d946ef;
+
+    /* Typography */
+    --font-header: "Cinzel Decorative", serif;
+    --font-sub: "Cinzel", serif;
+    --font-ui: "Outfit", sans-serif;
+    --font-flavor: "Cormorant Garamond", serif;
+
+    /* Effects */
+    --glass-blur: 16px;
+    --panel-shadow: 0 20px 50px rgba(0, 0, 0, 0.9), 0 0 20px rgba(168, 85, 247, 0.1);
+    --transition-slow: 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+    --transition-fast: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--color-void);
+    color: var(--color-bone);
+    font-family: var(--font-ui);
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: crosshair;
+}
+
+/* Background Textures */
+#grain-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 100;
+    pointer-events: none;
+    opacity: 0.08;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+#vignette {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 99;
+    pointer-events: none;
+    background: radial-gradient(circle at center, transparent 20%, rgba(3, 3, 5, 0.95) 100%);
+}
+
+#game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    perspective: 1200px;
+}
+
+/* Canvas & Wrapper */
+#canvas-wrapper {
+    position: relative;
+    padding: 16px;
+    background: var(--color-abyss);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 0 80px rgba(0, 0, 0, 0.9), 0 0 40px rgba(168, 85, 247, 0.05);
+    transition: transform 0.5s ease;
+    border-radius: 4px;
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.canvas-panel {
+    position: relative;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(168, 85, 247, 0.15);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.panel-label {
+    font-family: var(--font-sub);
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    color: rgba(241, 245, 249, 0.6);
+    text-transform: uppercase;
+    text-align: center;
+}
+
+#world-canvas,
+#view-canvas {
+    image-rendering: auto;
+    display: block;
+    background-color: #000;
+    mask-image: linear-gradient(to bottom, black 95%, transparent);
+}
+
+/* Decorative Ornaments */
+.ornament {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--color-necromancy);
+    opacity: 0.6;
+    pointer-events: none;
+    transition: var(--transition-slow);
+}
+
+.ornament::after {
+    content: '';
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: var(--color-soul);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--color-soul-glow);
+}
+
+.ornament.top-left {
+    top: -10px;
+    left: -10px;
+    border-right: none;
+    border-bottom: none;
+}
+
+.ornament.top-left::after {
+    top: -3px;
+    left: -3px;
+}
+
+.ornament.top-right {
+    top: -10px;
+    right: -10px;
+    border-left: none;
+    border-bottom: none;
+}
+
+.ornament.top-right::after {
+    top: -3px;
+    right: -3px;
+}
+
+.ornament.bottom-left {
+    bottom: -10px;
+    left: -10px;
+    border-right: none;
+    border-top: none;
+}
+
+.ornament.bottom-left::after {
+    bottom: -3px;
+    left: -3px;
+}
+
+.ornament.bottom-right {
+    bottom: -10px;
+    right: -10px;
+    border-left: none;
+    border-top: none;
+}
+
+.ornament.bottom-right::after {
+    bottom: -3px;
+    right: -3px;
+}
+
+/* Panels */
+.mystic-panel {
+    position: absolute;
+    background: var(--color-parchment);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--color-border);
+    padding: 2rem;
+    box-shadow: var(--panel-shadow);
+    z-index: 50;
+    transition: var(--transition-slow);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.mystic-panel::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-necromancy), transparent);
+    opacity: 0.5;
+}
+
+.center-panel {
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 480px;
+    text-align: center;
+}
+
+#ui-overlay {
+    top: 40px;
+    left: 40px;
+    width: 320px;
+    padding: 1.5rem;
+    border-left-width: 4px;
+    border-left-color: var(--color-necromancy);
+}
+
+#ui-overlay h1 {
+    font-family: var(--font-header);
+    font-size: 1.2rem;
+    letter-spacing: 4px;
+    margin-bottom: 0.5rem;
+    color: var(--color-soul);
+    text-shadow: 0 0 15px var(--color-soul-glow);
+}
+
+.status-text {
+    font-size: 0.85rem;
+    font-family: var(--font-flavor);
+    font-style: italic;
+    opacity: 0.8;
+    margin-bottom: 1.5rem;
+    color: var(--color-bone);
+}
+
+/* Controls Hint */
+#controls-hint {
+    margin: 1.5rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.hint-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    padding-bottom: 4px;
+    color: rgba(241, 245, 249, 0.7);
+}
+
+.key {
+    color: var(--color-necromancy);
+    font-weight: 700;
+    font-family: var(--font-sub);
+    font-size: 0.75rem;
+    background: rgba(168, 85, 247, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.action {
+    opacity: 0.9;
+}
+
+/* Buttons */
+button {
+    background: rgba(168, 85, 247, 0.05);
+    border: 1px solid var(--color-border);
+    color: var(--color-necromancy);
+    font-family: var(--font-sub);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    border-radius: 4px;
+}
+
+button:hover {
+    background: rgba(168, 85, 247, 0.15);
+    border-color: var(--color-necromancy);
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
+    color: var(--color-soul);
+}
+
+.primary-btn {
+    margin-top: 2.5rem;
+    padding: 1.2rem 4rem;
+    font-size: 1.1rem;
+    border-width: 1px;
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(217, 70, 239, 0.1));
+    border-color: var(--color-necromancy);
+    position: relative;
+    overflow: hidden;
+}
+
+.primary-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: 0.5s;
+}
+
+.primary-btn:hover::before {
+    left: 100%;
+}
+
+.icon-toggle {
+    width: 44px;
+    height: 44px;
+    font-size: 1rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.speed-btn {
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    min-width: 40px;
+    border-color: rgba(255, 255, 255, 0.05);
+    color: rgba(241, 245, 249, 0.4);
+}
+
+.speed-btn.active {
+    border-color: var(--color-soul);
+    color: var(--color-soul);
+    background: rgba(0, 242, 255, 0.1);
+    box-shadow: 0 0 10px rgba(0, 242, 255, 0.1);
+}
+
+/* Start Screen specific */
+.title-wrap {
+    margin-bottom: 3rem;
+    position: relative;
+}
+
+.main-title {
+    font-family: var(--font-header);
+    font-size: 4.5rem;
+    line-height: 1;
+    letter-spacing: 16px;
+    color: var(--color-bone);
+    background: linear-gradient(to bottom, #fff, #d4d4d4);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 15px rgba(168, 85, 247, 0.3));
+}
+
+.sub-title {
+    display: block;
+    font-size: 1.1rem;
+    font-family: var(--font-sub);
+    letter-spacing: 24px;
+    opacity: 0.4;
+    margin-top: 0.5rem;
+    margin-right: -24px;
+    color: var(--color-necromancy);
+}
+
+/* Sliders */
+#generation-sliders {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin: 2.5rem 0;
+}
+
+.slider-group {
+    display: grid;
+    grid-template-columns: 120px 1fr 50px;
+    align-items: center;
+    gap: 2rem;
+}
+
+.slider-group label {
+    font-size: 0.8rem;
+    font-family: var(--font-sub);
+    text-align: right;
+    letter-spacing: 2px;
+    opacity: 0.6;
+    text-transform: uppercase;
+}
+
+.slider-value {
+    font-family: var(--font-sub);
+    color: var(--color-soul);
+    font-size: 1.1rem;
+    text-shadow: 0 0 10px var(--color-soul-glow);
+}
+
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    outline: none;
+    border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--color-necromancy);
+    border: 2px solid var(--color-soul);
+    border-radius: 2px;
+    cursor: pointer;
+    box-shadow: 0 0 15px var(--color-soul-glow);
+    transform: rotate(45deg);
+    transition: var(--transition-fast);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    transform: rotate(45deg) scale(1.2);
+    background: var(--color-soul);
+}
+
+/* Time Controls */
+#time-controls {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.speed-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 1.5rem;
+}
+
+.preset-speeds {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+}
+
+/* Death Overlay */
+.death-title {
+    font-family: var(--font-header);
+    font-size: 3.5rem;
+    letter-spacing: 20px;
+    color: var(--color-blood);
+    filter: drop-shadow(0 0 30px var(--color-blood-glow));
+    margin-bottom: 2.5rem;
+    animation: pulse-blood 4s infinite;
+}
+
+@keyframes pulse-blood {
+
+    0%,
+    100% {
+        opacity: 0.8;
+        filter: drop-shadow(0 0 20px var(--color-blood-glow));
+    }
+
+    50% {
+        opacity: 1;
+        filter: drop-shadow(0 0 40px var(--color-blood-glow));
+    }
+}
+
+.death-text {
+    font-family: var(--font-flavor);
+    font-size: 1.2rem;
+    font-style: italic;
+    margin-bottom: 1.5rem;
+    opacity: 0.8;
+}
+
+.death-timer {
+    font-family: var(--font-sub);
+    color: var(--color-blood);
+    font-size: 0.9rem;
+    letter-spacing: 2px;
+}
+
+/* Tooltip */
+.mystic-tooltip {
+    position: fixed;
+    background: var(--color-abyss);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--color-necromancy);
+    padding: 10px 16px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+    z-index: 1000;
+    font-family: var(--font-sub);
+    font-size: 0.85rem;
+    color: var(--color-soul);
+    letter-spacing: 1px;
+    border-radius: 4px;
+    border-top: 2px solid var(--color-soul);
+}
+
+.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -45%) scale(0.9);
+}
+
+#ui-overlay.hidden {
+    transform: translateX(-40px) scale(0.95);
+}
+
+/* Floating Animation */
+@keyframes floating {
+
+    0%,
+    100% {
+        transform: translate(-50%, -50%) translateY(0px);
+    }
+
+    50% {
+        transform: translate(-50%, -50%) translateY(-10px);
+    }
+}
+
+.center-panel:not(.hidden) {
+    animation: floating 6s ease-in-out infinite;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 3px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--color-void);
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(to bottom, var(--color-necromancy), var(--color-soul));
+}

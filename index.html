@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Necromancer Island</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&family=Cinzel+Decorative:wght@400;700;900&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Outfit:wght@100..900&display=swap"
+        rel="stylesheet">
+</head>
+
+<body class="grim-fantasy">
+    <div id="grain-overlay"></div>
+    <div id="vignette"></div>
+
+    <div id="game-container">
+        <div id="canvas-wrapper">
+            <div class="canvas-panel">
+                <div class="panel-label">MAPA ŚWIATA</div>
+                <canvas id="world-canvas"></canvas>
+            </div>
+            <div class="canvas-panel">
+                <div class="panel-label">WIDOK GRY</div>
+                <canvas id="view-canvas"></canvas>
+            </div>
+            <div class="ornament top-left"></div>
+            <div class="ornament top-right"></div>
+            <div class="ornament bottom-left"></div>
+            <div class="ornament bottom-right"></div>
+        </div>
+
+        <div id="ui-overlay" class="mystic-panel">
+            <header>
+                <h1>NECROMANCER ISLAND</h1>
+                <p id="game-status" class="status-text">Observing local equilibrium...</p>
+            </header>
+
+            <div id="controls-hint">
+                <div class="hint-item"><span class="key">Click</span> <span class="action">Kill / Disturb (mapa)</span></div>
+                <div class="hint-item"><span class="key">WASD</span> <span class="action">Ruch postaci</span></div>
+                <div class="hint-item"><span class="key">Shift+D</span> <span class="action">Spawn Death Source</span></div>
+                <div class="hint-item"><span class="key">F</span> <span class="action">Toggle Fullscreen</span></div>
+                <div class="hint-item"><span class="key">Space</span> <span class="action">Pause / Resume</span></div>
+            </div>
+
+            <div id="time-controls">
+                <div class="speed-row">
+                    <button id="pause-btn" class="icon-toggle">⏸</button>
+                    <div class="preset-speeds">
+                        <button class="speed-btn active" data-speed="1">I</button>
+                        <button class="speed-btn" data-speed="2">II</button>
+                        <button class="speed-btn" data-speed="5">V</button>
+                        <button class="speed-btn" data-speed="10">X</button>
+                    </div>
+                </div>
+                <div class="slider-group">
+                    <input type="range" id="tps-slider" min="1" max="20" value="1">
+                    <span id="tps-display">1 TPS</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="start-screen" class="mystic-panel center-panel">
+            <div class="title-wrap">
+                <h2 class="main-title">NECROMANCER</h2>
+                <span class="sub-title">ISLAND</span>
+            </div>
+
+            <div id="generation-sliders">
+                <div class="slider-group">
+                    <label>Równiny</label>
+                    <input type="range" id="slider-plain" min="0" max="100" value="70">
+                    <span class="slider-value">70</span>
+                </div>
+                <div class="slider-group">
+                    <label>Lasy</label>
+                    <input type="range" id="slider-forest" min="0" max="100" value="10">
+                    <span class="slider-value">10</span>
+                </div>
+                <div class="slider-group">
+                    <label>Wody</label>
+                    <input type="range" id="slider-water" min="0" max="100" value="5">
+                    <span class="slider-value">5</span>
+                </div>
+                <div class="slider-group">
+                    <label>Miasta</label>
+                    <input type="range" id="slider-city" min="0" max="100" value="3">
+                    <span class="slider-value">3</span>
+                </div>
+                <div class="slider-group">
+                    <label>Góry</label>
+                    <input type="range" id="slider-mountain" min="0" max="100" value="10">
+                    <span class="slider-value">10</span>
+                </div>
+            </div>
+            <button id="start-btn" class="primary-btn">AWAKEN THE VOID</button>
+        </div>
+
+        <div id="city-tooltip" class="mystic-tooltip hidden"></div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
