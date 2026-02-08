@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&family=Cinzel+Decorative:wght@400;700;900&family=Cormorant+Garamond:ital,wght@0,300..700;1,300..700&family=Outfit:wght@100..900&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=Outfit:wght@100..900&family=Pirata+One&family=Texturina:opsz,wght@12..72,100..900&display=swap"
         rel="stylesheet">
 </head>
 
@@ -50,36 +50,25 @@
                     <h1>NECROMANCER ISLAND</h1>
                     <p id="game-status" class="status-text">Observing local equilibrium...</p>
                 </div>
-                <button id="ui-toggle" class="icon-toggle" aria-expanded="true" aria-controls="ui-body">▴</button>
-            </header>
-
-            <div id="ui-body">
-                <div id="controls-hint">
-                    <div class="hint-item"><span class="key">Click</span> <span class="action">Kill / Disturb (map)</span></div>
-                    <div class="hint-item"><span class="key">WASD</span> <span class="action">Move</span></div>
-                    <div class="hint-item"><span class="key">Game Mode</span> <span class="action">Obstacles: Forest, Water, Mountain</span></div>
-                    <div class="hint-item"><span class="key">Shift+D</span> <span class="action">Spawn Death Source</span></div>
-                    <div class="hint-item"><span class="key">F</span> <span class="action">Toggle Fullscreen</span></div>
-                    <div class="hint-item"><span class="key">Space</span> <span class="action">Pause / Resume</span></div>
-                    <div class="hint-item"><span class="key">ALERT</span> <span class="action">NPCs witnessed a murder and will retaliate</span></div>
-                </div>
-
-                <div id="time-controls">
-                    <div class="speed-row">
-                        <button id="pause-btn" class="icon-toggle">⏸</button>
-                        <div class="preset-speeds">
-                            <button class="speed-btn active" data-speed="1">I</button>
-                            <button class="speed-btn" data-speed="2">II</button>
-                            <button class="speed-btn" data-speed="5">V</button>
-                            <button class="speed-btn" data-speed="10">X</button>
+                <div id="ui-body">
+                    <div id="time-controls">
+                        <div class="speed-row">
+                            <button id="pause-btn" class="icon-toggle">⏸</button>
+                            <div class="preset-speeds">
+                                <button class="speed-btn active" data-speed="1">I</button>
+                                <button class="speed-btn" data-speed="2">II</button>
+                                <button class="speed-btn" data-speed="5">V</button>
+                                <button class="speed-btn" data-speed="10">X</button>
+                            </div>
+                        </div>
+                        <div class="slider-group">
+                            <input type="range" id="tps-slider" min="1" max="20" value="1">
+                            <span id="tps-display">1 TPS</span>
                         </div>
                     </div>
-                    <div class="slider-group">
-                        <input type="range" id="tps-slider" min="1" max="20" value="1">
-                        <span id="tps-display">1 TPS</span>
-                    </div>
                 </div>
-            </div>
+                <button id="ui-toggle" class="icon-toggle" aria-expanded="true" aria-controls="ui-body">▴</button>
+            </header>
         </div>
 
         <div id="start-screen" class="mystic-panel center-panel">

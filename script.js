@@ -1238,6 +1238,7 @@ class Game {
 
     renderWorld() {
         this.worldCtx.clearRect(0, 0, this.worldCanvas.width, this.worldCanvas.height);
+        const revealAll = this.viewMode === 'god';
 
         for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
             for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
@@ -1245,7 +1246,7 @@ class Game {
                 const px = x * this.worldCellSize;
                 const py = y * this.worldCellSize;
 
-                if (!cell.discovered) {
+                if (!cell.discovered && !revealAll) {
                     this.worldCtx.save();
                     this.worldCtx.globalAlpha = 1.0;
                     this.worldCtx.fillStyle = '#050505';
@@ -1265,7 +1266,7 @@ class Game {
                 }
 
                 const typeData = CELL_TYPES[cell.type];
-                this.worldCtx.globalAlpha = Math.max(0.1, cell.discoveryAlpha || 1);
+                this.worldCtx.globalAlpha = revealAll ? 1 : Math.max(0.1, cell.discoveryAlpha || 1);
                 this.worldCtx.fillStyle = typeData.color;
                 this.worldCtx.fillRect(px, py, this.worldCellSize, this.worldCellSize);
 
@@ -1392,6 +1393,15 @@ class Game {
             this.viewCtx.shadowColor = 'rgba(34, 197, 94, 0.7)';
             this.viewCtx.shadowBlur = Math.max(3, fontSize * 0.25);
             this.viewCtx.fillText('🧙‍♂️', playerPx, playerPy);
+            const underlineWidth = Math.max(12, fontSize * 0.9);
+            const underlineY = playerPy + fontSize * 0.55;
+            this.viewCtx.shadowBlur = 0;
+            this.viewCtx.lineWidth = Math.max(2, fontSize * 0.1);
+            this.viewCtx.strokeStyle = 'rgba(226, 212, 183, 0.9)';
+            this.viewCtx.beginPath();
+            this.viewCtx.moveTo(playerPx - underlineWidth / 2, underlineY);
+            this.viewCtx.lineTo(playerPx + underlineWidth / 2, underlineY);
+            this.viewCtx.stroke();
             this.viewCtx.restore();
         } else {
             this.viewCtx.fillStyle = '#f8fafc';
@@ -1403,12 +1413,10 @@ class Game {
             this.viewCtx.stroke();
         }
 
-        if (this.player.hp < this.player.maxHp) {
-            const hpBarWidth = this.viewCellSize * 0.7;
-            const hpBarHeight = Math.max(2, this.viewCellSize * 0.1);
-            const hpOffset = this.viewMode === 'game' ? this.viewCellSize * 0.55 : this.viewCellSize * 0.5;
-            this.drawHpBar(playerPx, playerPy - hpOffset, hpBarWidth, hpBarHeight, this.player.hp, this.player.maxHp, '#22c55e');
-        }
+        const hpBarWidth = this.viewCellSize * 0.7;
+        const hpBarHeight = Math.max(2, this.viewCellSize * 0.1);
+        const hpOffset = this.viewMode === 'game' ? this.viewCellSize * 0.55 : this.viewCellSize * 0.5;
+        this.drawHpBar(playerPx, playerPy - hpOffset, hpBarWidth, hpBarHeight, this.player.hp, this.player.maxHp, '#22c55e', true);
     }
 
     drawLocalGrid(worldX, worldY, offsetX, offsetY) {
@@ -1530,7 +1538,7 @@ class Game {
                 this.viewCtx.globalAlpha = 1.0;
                 this.viewCtx.fillStyle = '#ef4444';
                 this.viewCtx.font = `${fontSize * 0.7}px "Cormorant Garamond","Outfit","Segoe UI Emoji","Apple Color Emoji"`;
-                this.viewCtx.fillText('❗', px, py - fontSize * 0.55);
+                this.viewCtx.fillText('💢', px, py - fontSize * 0.55);
             }
 
             if (!person.isZombie && person.alertTimer > 0) {
@@ -1538,6 +1546,13 @@ class Game {
                 this.viewCtx.fillStyle = '#f97316';
                 this.viewCtx.font = `${fontSize * 0.4}px "Cinzel","Cormorant Garamond","Outfit","Segoe UI"`;
                 this.viewCtx.fillText('ALERT', px, py - fontSize * 0.65);
+            }
+
+            if (person.angryTimer > 0) {
+                this.viewCtx.globalAlpha = 1.0;
+                this.viewCtx.fillStyle = '#ef4444';
+                this.viewCtx.font = `${fontSize * 0.6}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"`;
+                this.viewCtx.fillText('💢', px, py - fontSize * 0.85);
             }
 
             if (!person.isDead && person.hp < person.maxHp) {
@@ -1575,40 +1590,50 @@ class Game {
                 if (person.attackCooldown > 0) {
                     person.attackCooldown = Math.max(0, person.attackCooldown - dt);
                 }
-
-        if (person.fleeToAllies) {
-            let closest = null;
-            let closestDist = Infinity;
-            for (const other of people) {
-                if (other === person) continue;
-                if (other.isDead || other.isZombie) continue;
-                const d = Math.hypot(other.x - person.x, other.y - person.y);
-                if (d < closestDist) {
-                    closest = other;
-                    closestDist = d;
+                if (person.angryTimer > 0) {
+                    person.angryTimer = Math.max(0, person.angryTimer - dt);
                 }
-            }
-            if (closest) {
-                this.moveNpcToward(person, grid, worldX, worldY, closest.x, closest.y, dt);
-                if (closestDist <= 0.85) {
-                    person.fleeToAllies = false;
-                    person.speed = person.baseSpeed;
-                    person.aggressionMode = person.lastAttackerType === 'zombie' ? 'zombie' : 'player';
-                }
-                continue;
-            } else {
-                person.fleeToAllies = false;
-                person.speed = person.baseSpeed;
-                person.aggressionMode = person.lastAttackerType === 'zombie' ? 'zombie' : 'player';
-            }
-        }
 
-        if (person.aggressionMode) {
-            const target = this.getNpcAggroTarget(person, people, grid, worldX, worldY);
-            if (target) {
-                this.moveNpcToward(person, grid, worldX, worldY, target.x, target.y, dt);
-                const dist = Math.hypot(target.x - person.x, target.y - person.y);
-                if (dist <= CONFIG.NPC_ATTACK_RADIUS && person.attackCooldown <= 0) {
+                if (person.fleeToAllies) {
+                    let closest = null;
+                    let closestDist = Infinity;
+                    for (const other of people) {
+                        if (other === person) continue;
+                        if (other.isDead || other.isZombie) continue;
+                        const d = Math.hypot(other.x - person.x, other.y - person.y);
+                        if (d < closestDist) {
+                            closest = other;
+                            closestDist = d;
+                        }
+                    }
+                    if (closest) {
+                        this.moveNpcToward(person, grid, worldX, worldY, closest.x, closest.y, dt);
+                        if (closestDist <= 0.85) {
+                            person.fleeToAllies = false;
+                            person.speed = person.baseSpeed;
+                            person.aggressionMode = person.lastAttackerType === 'zombie' ? 'zombie' : 'player';
+                        }
+                        continue;
+                    } else {
+                        person.fleeToAllies = false;
+                        person.speed = person.baseSpeed;
+                        person.aggressionMode = person.lastAttackerType === 'zombie' ? 'zombie' : 'player';
+                    }
+                }
+
+                if (person.aggressionMode) {
+                    const target = this.getNpcAggroTarget(person, people, grid, worldX, worldY);
+                    if (target) {
+                        const targetKey = target.type === 'player'
+                            ? 'player'
+                            : (target.person?.id ?? 'zombie');
+                        if (person.aggroTargetId !== targetKey) {
+                            person.aggroTargetId = targetKey;
+                            person.angryTimer = 0.9;
+                        }
+                        this.moveNpcToward(person, grid, worldX, worldY, target.x, target.y, dt);
+                        const dist = Math.hypot(target.x - person.x, target.y - person.y);
+                        if (dist <= CONFIG.NPC_ATTACK_RADIUS && person.attackCooldown <= 0) {
                             if (target.type === 'player') {
                                 this.damagePlayer(1);
                             } else if (target.type === 'zombie' && target.person) {
@@ -1618,6 +1643,7 @@ class Game {
                         }
                         continue;
                     }
+                    person.aggroTargetId = null;
                 }
                 if (person.idle > 0) {
                     person.idle = Math.max(0, person.idle - dt);
@@ -1708,7 +1734,9 @@ class Game {
                 graveEmoji: rng() < 0.5 ? '🪦' : '⚰️',
                 isZombie: false,
                 alertTimer: 0,
+                angryTimer: 0,
                 targetId: null,
+                aggroTargetId: null,
                 aggressionMode: null,
                 hp: 2,
                 maxHp: 2,
@@ -3034,10 +3062,10 @@ class Game {
         }
     }
 
-    drawHpBar(px, py, width, height, hp, maxHp, color) {
-        if (maxHp <= 0 || hp >= maxHp) return;
+    drawHpBar(px, py, width, height, hp, maxHp, color, force = false) {
+        if (!force && (maxHp <= 0 || hp >= maxHp)) return;
         const clamped = Math.max(0, Math.min(maxHp, hp));
-        const ratio = clamped / maxHp;
+        const ratio = maxHp > 0 ? clamped / maxHp : 0;
         const x = px - width / 2;
         const y = py - height / 2;
         this.viewCtx.save();
@@ -3146,6 +3174,9 @@ class Game {
             if (zombie.attackCooldown > 0) {
                 zombie.attackCooldown = Math.max(0, zombie.attackCooldown - dt);
             }
+            if (zombie.angryTimer > 0) {
+                zombie.angryTimer = Math.max(0, zombie.angryTimer - dt);
+            }
             if (this.isPositionBlockedWithRadius(this.player.worldX, this.player.worldY, zombie.x + 0.5, zombie.y + 0.5, CONFIG.ZOMBIE_COLLIDER_RADIUS)) {
                 const escape = this.findNearestValidLocalCell(this.player.worldX, this.player.worldY, zombie.x, zombie.y);
                 if (escape) {
@@ -3171,6 +3202,7 @@ class Game {
 
             if (target && zombie.targetId !== target.id) {
                 zombie.alertTimer = CONFIG.ZOMBIE_ALERT_DURATION;
+                zombie.angryTimer = 0.9;
                 zombie.targetId = target.id;
             }
 
