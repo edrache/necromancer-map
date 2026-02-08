@@ -657,6 +657,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
     letter-spacing: 2px;
 }
 
+#game-over-screen {
+    z-index: 120;
+    min-width: 520px;
+}
+
 /* Tooltip */
 .mystic-tooltip {
     position: fixed;

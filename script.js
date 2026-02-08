@@ -33,13 +33,18 @@ const CONFIG = {
     LOCAL_PEOPLE_MAX: 24,
     NPC_INTERACT_RANGE: 1.6, // local cell distance from player
     NPC_HOVER_RADIUS: 0.85, // local cell distance from cursor
+    NPC_WITNESS_RADIUS: 4.2, // local cell distance for witnessing murder
+    NPC_ALERT_DURATION: 4.5, // seconds
+    NPC_ATTACK_RADIUS: 0.65, // local cell distance
+    NPC_SIGHT_RADIUS: 4.8,
     ZOMBIE_SPEED_MIN: 0.85, // local cells per second
     ZOMBIE_SPEED_MAX: 1.6, // local cells per second
     ZOMBIE_ATTACK_RADIUS: 0.7, // local cell distance
     ZOMBIE_SIGHT_RADIUS: 3.2,
     ZOMBIE_ALERT_DURATION: 0.8,
     ZOMBIE_COLLIDER_RADIUS: 0.28,
-    ZOMBIE_AVOID_PLAYER_RADIUS: 0.75
+    ZOMBIE_AVOID_PLAYER_RADIUS: 0.75,
+    ZOMBIE_FOLLOW_RADIUS: 5
 };
 
 const CELL_TYPES = {
@@ -323,6 +328,7 @@ class Game {
         this.deathSources = [];
         this.localGrids = new Map();
         this.localPeople = new Map();
+        this.pendingZombieTransfers = [];
         this.isPaused = true;
         this.isDead = false;
         this.deathSeverity = 0;
@@ -333,6 +339,8 @@ class Game {
         this.hoveredNpc = null;
         this.hoveredGrave = null;
         this.tooltip = document.getElementById('city-tooltip');
+        this.gameOverScreen = document.getElementById('game-over-screen');
+        this.restartBtn = document.getElementById('restart-btn');
 
         this.tps = 1;
         this.started = false;
@@ -345,7 +353,9 @@ class Game {
             worldX: 0,
             worldY: 0,
             localX: 0,
-            localY: 0
+            localY: 0,
+            hp: 3,
+            maxHp: 3
         };
         this.viewTransition = null;
         this.lastFrameTime = performance.now();
@@ -362,10 +372,15 @@ class Game {
         document.getElementById('start-btn').addEventListener('click', () => {
             this.initGrid(); // Re-initialize with current slider values
             this.spawnPlayer();
+            this.player.hp = this.player.maxHp;
             this.started = true;
             this.start();
             document.getElementById('start-screen').classList.add('hidden');
         });
+
+        if (this.restartBtn) {
+            this.restartBtn.addEventListener('click', () => this.restartGame());
+        }
 
         // Interactions
         this.worldCanvas.addEventListener('mousedown', (e) => this.handleClick(e));
@@ -1091,6 +1106,10 @@ class Game {
 
     updateUI() {
         const status = document.getElementById('game-status');
+        if (this.isDead) {
+            status.innerText = 'You were slain. The island remembers.';
+            return;
+        }
         if (this.regions.length > 0) {
             const avgStability = this.regions.reduce((acc, r) => acc + r.stability, 0) / this.regions.length;
             status.innerText = `World Stability: ${Math.round(avgStability * 100)}% | Regions: ${this.regions.length} | Severity: ${Math.floor(this.deathSeverity)}`;
@@ -1292,6 +1311,13 @@ class Game {
             this.viewCtx.lineWidth = 2;
             this.viewCtx.stroke();
         }
+
+        if (this.player.hp < this.player.maxHp) {
+            const hpBarWidth = this.viewCellSize * 0.7;
+            const hpBarHeight = Math.max(2, this.viewCellSize * 0.1);
+            const hpOffset = this.viewMode === 'game' ? this.viewCellSize * 0.55 : this.viewCellSize * 0.5;
+            this.drawHpBar(playerPx, playerPy - hpOffset, hpBarWidth, hpBarHeight, this.player.hp, this.player.maxHp, '#22c55e');
+        }
     }
 
     drawLocalGrid(worldX, worldY, offsetX, offsetY) {
@@ -1359,14 +1385,21 @@ class Game {
 
     drawLocalPeople(worldX, worldY, offsetX, offsetY) {
         const cell = this.grid[worldY]?.[worldX];
-        if (!cell || cell.population <= 0) return;
-        if (cell.type !== 'VILLAGE' && cell.type !== 'CITY') return;
+        if (!cell) return;
 
-        const count = this.getLocalPeopleCount(cell);
-        if (count <= 0) return;
-
-        const people = this.getLocalPeople(worldX, worldY, count);
+        let people = null;
+        if (cell.type === 'VILLAGE' || cell.type === 'CITY') {
+            const count = this.getLocalPeopleCount(cell);
+            if (count <= 0) return;
+            people = this.getLocalPeople(worldX, worldY, count);
+        } else {
+            const entry = this.localPeople.get(`${worldX},${worldY}`);
+            if (!entry || entry.people.length === 0) return;
+            people = entry.people;
+        }
         const fontSize = Math.max(12, this.viewCellSize * 0.7);
+        const hpBarWidth = this.viewCellSize * 0.6;
+        const hpBarHeight = Math.max(2, this.viewCellSize * 0.08);
 
         for (let i = 0; i < people.length; i++) {
             const person = people[i];
@@ -1375,6 +1408,10 @@ class Game {
                 : Math.sin((this.animationClock * 3) + person.bobPhase) * this.viewCellSize * 0.03;
             const px = (person.x + 0.5) * this.viewCellSize + offsetX;
             const py = (person.y + 0.5) * this.viewCellSize + offsetY + bob;
+
+            if (person.isDead && person.hideGrave) {
+                continue;
+            }
 
             this.viewCtx.globalAlpha = 1.0;
             this.viewCtx.fillStyle = 'rgba(15, 23, 42, 0.45)';
@@ -1404,6 +1441,17 @@ class Game {
                 this.viewCtx.font = `${fontSize * 0.7}px "Cormorant Garamond","Outfit","Segoe UI Emoji","Apple Color Emoji"`;
                 this.viewCtx.fillText('❗', px, py - fontSize * 0.55);
             }
+
+            if (!person.isZombie && person.alertTimer > 0) {
+                this.viewCtx.globalAlpha = 1.0;
+                this.viewCtx.fillStyle = '#f97316';
+                this.viewCtx.font = `${fontSize * 0.4}px "Cinzel","Cormorant Garamond","Outfit","Segoe UI"`;
+                this.viewCtx.fillText('UWAGA', px, py - fontSize * 0.65);
+            }
+
+            if (!person.isDead && person.hp < person.maxHp) {
+                this.drawHpBar(px, py - fontSize * 0.65, hpBarWidth, hpBarHeight, person.hp, person.maxHp, '#f97316');
+            }
         }
 
         this.viewCtx.globalAlpha = 1.0;
@@ -1411,6 +1459,7 @@ class Game {
 
     updateLocalPeople(dt) {
         if (!this.started) return;
+        if (this.isDead) return;
         const targets = [];
         if (this.viewTransition && this.viewTransition.active) {
             targets.push([this.viewTransition.fromX, this.viewTransition.fromY]);
@@ -1430,6 +1479,56 @@ class Game {
             const grid = this.getLocalGrid(worldX, worldY);
             for (const person of people) {
                 if (person.isDead || person.isZombie) continue;
+                if (person.alertTimer > 0) {
+                    person.alertTimer = Math.max(0, person.alertTimer - dt);
+                }
+                if (person.attackCooldown > 0) {
+                    person.attackCooldown = Math.max(0, person.attackCooldown - dt);
+                }
+
+        if (person.fleeToAllies) {
+            let closest = null;
+            let closestDist = Infinity;
+            for (const other of people) {
+                if (other === person) continue;
+                if (other.isDead || other.isZombie) continue;
+                const d = Math.hypot(other.x - person.x, other.y - person.y);
+                if (d < closestDist) {
+                    closest = other;
+                    closestDist = d;
+                }
+            }
+            if (closest) {
+                this.moveNpcToward(person, grid, worldX, worldY, closest.x, closest.y, dt);
+                if (closestDist <= 0.85) {
+                    person.fleeToAllies = false;
+                    person.speed = person.baseSpeed;
+                    person.aggressionMode = person.lastAttackerType === 'zombie' ? 'zombie' : 'player';
+                }
+                continue;
+            } else {
+                person.fleeToAllies = false;
+                person.speed = person.baseSpeed;
+                person.aggressionMode = person.lastAttackerType === 'zombie' ? 'zombie' : 'player';
+            }
+        }
+
+        if (person.aggressionMode) {
+            const target = this.getNpcAggroTarget(person, people, grid, worldX, worldY);
+            if (target) {
+                this.moveNpcToward(person, grid, worldX, worldY, target.x, target.y, dt);
+                const dist = Math.hypot(target.x - person.x, target.y - person.y);
+                if (dist <= CONFIG.NPC_ATTACK_RADIUS && person.attackCooldown <= 0) {
+                            if (target.type === 'player') {
+                                this.damagePlayer(1);
+                            } else if (target.type === 'zombie' && target.person) {
+                                this.damageZombie(target.person, 1);
+                            }
+                            person.attackCooldown = 0.7;
+                        }
+                        continue;
+                    }
+                }
                 if (person.idle > 0) {
                     person.idle = Math.max(0, person.idle - dt);
                     if (person.idle > 0) continue;
@@ -1498,7 +1597,8 @@ class Game {
             const rng = this.buildSeededRng(seed);
             const start = this.findRandomWalkableLocalCellWithRng(worldX, worldY, grid, rng)
                 || { x: center, y: center };
-            const speed = 0.45 + rng() * 1.05;
+            const baseSpeed = 0.45 + rng() * 1.05;
+            const speed = baseSpeed;
             const emoji = LOCAL_PEOPLE_EMOJIS[Math.floor(rng() * LOCAL_PEOPLE_EMOJIS.length)];
             people.push({
                 x: start.x,
@@ -1518,7 +1618,15 @@ class Game {
                 graveEmoji: rng() < 0.5 ? '🪦' : '⚰️',
                 isZombie: false,
                 alertTimer: 0,
-                targetId: null
+                targetId: null,
+                aggressionMode: null,
+                hp: 2,
+                maxHp: 2,
+                attackCooldown: 0,
+                baseSpeed,
+                fleeToAllies: false,
+                lastAttackerType: null,
+                hideGrave: false
             });
         }
 
@@ -1539,6 +1647,64 @@ class Game {
             CONFIG.LOCAL_PEOPLE_MAX,
             Math.max(0, Math.floor((base + cell.population * scale) * sizeMultiplier))
         );
+    }
+
+    getNpcAggroTarget(person, people, grid, worldX, worldY) {
+        if (person.aggressionMode === 'player') {
+            if (this.isDead) return null;
+            return { type: 'player', x: this.player.localX, y: this.player.localY };
+        }
+        if (person.aggressionMode === 'zombie') {
+            let best = null;
+            let bestDist = CONFIG.NPC_SIGHT_RADIUS;
+            for (const other of people) {
+                if (!other.isZombie || other.isDead) continue;
+                const dx = other.x - person.x;
+                const dy = other.y - person.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist > bestDist) continue;
+                if (!this.hasLineOfSight(worldX, worldY, grid, person.x, person.y, other.x, other.y)) {
+                    continue;
+                }
+                best = other;
+                bestDist = dist;
+            }
+            if (best) {
+                return { type: 'zombie', person: best, x: best.x, y: best.y };
+            }
+        }
+        return null;
+    }
+
+    moveNpcToward(person, grid, worldX, worldY, targetX, targetY, dt) {
+        const dx = targetX - person.x;
+        const dy = targetY - person.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.01) return;
+
+        const step = person.speed * dt;
+        const move = Math.min(step, dist);
+        const nx = person.x + (dx / dist) * move;
+        const ny = person.y + (dy / dist) * move;
+        const cellX = Math.floor(nx);
+        const cellY = Math.floor(ny);
+        const cellType = grid[cellY]?.[cellX];
+        if (!cellType || this.isBlockedCell(worldX, worldY, cellX, cellY, cellType)) {
+            const tryX = person.x + Math.sign(dx) * move;
+            const tryY = person.y + Math.sign(dy) * move;
+            const tryCellX = Math.floor(tryX);
+            const tryCellY = Math.floor(tryY);
+            const tryCellTypeX = grid[Math.floor(person.y)]?.[tryCellX];
+            const tryCellTypeY = grid[tryCellY]?.[Math.floor(person.x)];
+            if (tryCellTypeX && !this.isBlockedCell(worldX, worldY, tryCellX, Math.floor(person.y), tryCellTypeX)) {
+                person.x = tryX;
+            } else if (tryCellTypeY && !this.isBlockedCell(worldX, worldY, Math.floor(person.x), tryCellY, tryCellTypeY)) {
+                person.y = tryY;
+            }
+            return;
+        }
+        person.x = nx;
+        person.y = ny;
     }
 
     findWalkableNearWithRng(worldX, worldY, grid, rng, originX, originY, radius) {
@@ -1586,7 +1752,11 @@ class Game {
         const emojiList = LOCAL_VIEW_EMOJIS[type] || LOCAL_VIEW_EMOJIS.PLAIN;
         const emojiSeed = hash01(worldX, worldY, x, y, 73);
         const density = LOCAL_VIEW_EMOJI_DENSITY[type] ?? 0.35;
-        const showEmoji = (type === 'VILLAGE' || type === 'CITY') ? true : emojiSeed < density;
+        let showEmoji = (type === 'VILLAGE' || type === 'CITY') ? true : emojiSeed < density;
+        if ((type === 'WATER' || type === 'MOUNTAIN' || type === 'FOREST')
+            && (x === 0 || y === 0 || x === CONFIG.LOCAL_GRID_SIZE - 1 || y === CONFIG.LOCAL_GRID_SIZE - 1)) {
+            showEmoji = false;
+        }
         let symbol = showEmoji
             ? emojiList[Math.floor(emojiSeed * emojiList.length) % emojiList.length]
             : '';
@@ -2136,6 +2306,7 @@ class Game {
             this.updatePlayer(dt);
             this.updateViewTransition(dt);
             this.updateLocalPeople(dt);
+            this.processPendingZombieTransfers(dt);
             this.updateZombies(dt);
             this.render();
             requestAnimationFrame(loop);
@@ -2145,6 +2316,7 @@ class Game {
 
     updatePlayer(dt) {
         if (!this.started) return;
+        if (this.isDead) return;
         if (this.viewMode === 'game') {
             this.ensurePlayerPassable();
         }
@@ -2227,6 +2399,8 @@ class Game {
     movePlayer(moveX, moveY, useCollision) {
         const startWorldX = this.player.worldX;
         const startWorldY = this.player.worldY;
+        const startLocalX = this.player.localX;
+        const startLocalY = this.player.localY;
         let worldX = this.player.worldX;
         let worldY = this.player.worldY;
         let localX = this.player.localX;
@@ -2267,6 +2441,12 @@ class Game {
         this.player.localY = localY;
 
         if (worldX !== startWorldX || worldY !== startWorldY) {
+            const dx = worldX - startWorldX;
+            const dy = worldY - startWorldY;
+            const size = CONFIG.LOCAL_GRID_SIZE;
+            const fromLocalX = this.player.localX + dx * size;
+            const fromLocalY = this.player.localY + dy * size;
+            this.transferZombiesBetweenAreas(startWorldX, startWorldY, worldX, worldY, dx, dy, fromLocalX, fromLocalY);
             this.viewTransition = {
                 active: true,
                 fromX: startWorldX,
@@ -2277,6 +2457,77 @@ class Game {
                 dy: worldY - startWorldY,
                 progress: 0
             };
+        }
+    }
+
+    transferZombiesBetweenAreas(fromX, fromY, toX, toY, dx, dy, playerFromLocalX, playerFromLocalY) {
+        const fromKey = `${fromX},${fromY}`;
+        const fromEntry = this.localPeople.get(fromKey);
+        if (!fromEntry || !fromEntry.people || fromEntry.people.length === 0) return;
+
+        const size = CONFIG.LOCAL_GRID_SIZE;
+        const edgeOffset = 0.2;
+
+        for (let i = fromEntry.people.length - 1; i >= 0; i--) {
+            const person = fromEntry.people[i];
+            if (!person.isZombie || person.isDead) continue;
+            const distToPlayer = Math.hypot(person.x - playerFromLocalX, person.y - playerFromLocalY);
+            if (distToPlayer > CONFIG.ZOMBIE_FOLLOW_RADIUS) continue;
+            fromEntry.people.splice(i, 1);
+            const exitDist = dx !== 0
+                ? (dx > 0 ? (size - 1 - person.x) : person.x)
+                : (dy > 0 ? (size - 1 - person.y) : person.y);
+            const travelTime = Math.max(0, exitDist) / Math.max(0.2, person.speed);
+            const entryX = dx > 0 ? edgeOffset : (dx < 0 ? size - 1 - edgeOffset : Math.max(edgeOffset, Math.min(size - 1 - edgeOffset, person.x)));
+            const entryY = dy > 0 ? edgeOffset : (dy < 0 ? size - 1 - edgeOffset : Math.max(edgeOffset, Math.min(size - 1 - edgeOffset, person.y)));
+
+            this.pendingZombieTransfers.push({
+                zombie: person,
+                toX,
+                toY,
+                timer: travelTime,
+                entryX,
+                entryY
+            });
+        }
+    }
+
+    processPendingZombieTransfers(dt) {
+        if (!this.pendingZombieTransfers.length) return;
+        for (let i = this.pendingZombieTransfers.length - 1; i >= 0; i--) {
+            const entry = this.pendingZombieTransfers[i];
+            entry.timer -= dt;
+            if (entry.timer > 0) continue;
+
+            const cell = this.grid[entry.toY]?.[entry.toX];
+            if (!cell) {
+                this.pendingZombieTransfers.splice(i, 1);
+                continue;
+            }
+
+            let people = null;
+            if (cell.type === 'VILLAGE' || cell.type === 'CITY') {
+                const count = this.getLocalPeopleCount(cell);
+                people = this.getLocalPeople(entry.toX, entry.toY, count);
+            } else {
+                people = this.ensureLocalPeopleEntry(entry.toX, entry.toY, cell.type);
+            }
+            const zombie = entry.zombie;
+            let nx = Math.max(0.2, Math.min(CONFIG.LOCAL_GRID_SIZE - 1.2, entry.entryX));
+            let ny = Math.max(0.2, Math.min(CONFIG.LOCAL_GRID_SIZE - 1.2, entry.entryY));
+            const nearby = this.findNearestValidLocalCell(entry.toX, entry.toY, nx, ny);
+            if (nearby) {
+                nx = nearby.localX;
+                ny = nearby.localY;
+            }
+            zombie.x = nx;
+            zombie.y = ny;
+            zombie.tx = nx;
+            zombie.ty = ny;
+            zombie.targetId = null;
+            people.push(zombie);
+
+            this.pendingZombieTransfers.splice(i, 1);
         }
     }
 
@@ -2378,6 +2629,18 @@ class Game {
         if (type !== 'WATER' && type !== 'MOUNTAIN' && type !== 'FOREST') return false;
         const emojiInfo = this.getLocalCellEmojiInfo(worldX, worldY, cellX, cellY, type);
         return emojiInfo.showEmoji;
+    }
+
+    ensureLocalPeopleEntry(worldX, worldY, type) {
+        const key = `${worldX},${worldY}`;
+        let entry = this.localPeople.get(key);
+        if (!entry) {
+            entry = { type, count: 0, people: [] };
+            this.localPeople.set(key, entry);
+        } else if (entry.type !== type) {
+            entry.type = type;
+        }
+        return entry.people;
     }
 
     findNearestValidLocalCell(worldX, worldY, localX, localY) {
@@ -2511,6 +2774,9 @@ class Game {
             const dy = person.y + 0.5 - localY;
             const dist = Math.hypot(dx, dy);
             if (person.isDead) {
+                if (person.hideGrave) {
+                    continue;
+                }
                 if (dist <= closestGraveDist) {
                     closestGrave = person;
                     closestGraveDist = dist;
@@ -2558,6 +2824,7 @@ class Game {
 
     handleViewClick(e) {
         if (!this.started) return;
+        if (this.isDead) return;
         if (this.viewMode !== 'game') return;
         if (this.hoveredGrave?.person) {
             this.raiseZombie(this.hoveredGrave.person);
@@ -2571,12 +2838,10 @@ class Game {
         const distToPlayer = Math.hypot(this.player.localX - person.x, this.player.localY - person.y);
         if (distToPlayer > CONFIG.NPC_INTERACT_RANGE) return;
 
-        person.isDead = true;
-        person.hasTarget = false;
-        person.idle = 999;
-        person.speed = 0;
-
-        this.deathSeverity += 1;
+        this.damageNpc(person, 1, worldX, worldY, 'player');
+        if (person.isDead) {
+            this.deathSeverity += 1;
+        }
         this.clearNpcHover();
     }
 
@@ -2597,25 +2862,183 @@ class Game {
         person.speed = this.randomBetween(CONFIG.ZOMBIE_SPEED_MIN, CONFIG.ZOMBIE_SPEED_MAX);
         person.alertTimer = CONFIG.ZOMBIE_ALERT_DURATION;
         person.targetId = null;
+        person.aggressionMode = null;
+        person.hp = 1;
+        person.maxHp = 1;
+        person.attackCooldown = 0;
+        person.hideGrave = false;
+        const nearby = this.findNearestValidLocalCell(this.player.worldX, this.player.worldY, person.x, person.y);
+        if (nearby) {
+            person.x = nearby.localX;
+            person.y = nearby.localY;
+        }
+    }
+
+    triggerMurder(worldX, worldY, localX, localY, killerType) {
+        const cell = this.grid[worldY]?.[worldX];
+        if (!cell || cell.population <= 0 || (cell.type !== 'VILLAGE' && cell.type !== 'CITY')) return;
+        const count = this.getLocalPeopleCount(cell);
+        if (count <= 0) return;
+        const people = this.getLocalPeople(worldX, worldY, count);
+        for (const person of people) {
+            if (person.isDead || person.isZombie) continue;
+            const dist = Math.hypot(person.x - localX, person.y - localY);
+            if (dist > CONFIG.NPC_WITNESS_RADIUS) continue;
+            person.alertTimer = CONFIG.NPC_ALERT_DURATION;
+            person.aggressionMode = killerType === 'zombie' ? 'zombie' : 'player';
+        }
+    }
+
+    killZombie(person) {
+        if (!person || !person.isZombie || person.isDead) return;
+        person.isDead = true;
+        person.isZombie = false;
+        person.hasTarget = false;
+        person.idle = 999;
+        person.speed = 0;
+        person.alertTimer = 0;
+        person.hp = 0;
+        person.hideGrave = true;
+    }
+
+    killNpc(person) {
+        if (!person || person.isDead) return;
+        person.isDead = true;
+        person.isZombie = false;
+        person.hasTarget = false;
+        person.idle = 999;
+        person.speed = 0;
+        person.alertTimer = 0;
+        person.hp = 0;
+        person.hideGrave = false;
+    }
+
+    damageNpc(person, amount, worldX, worldY, killerType) {
+        if (!person || person.isDead) return;
+        person.hp = Math.max(0, person.hp - amount);
+        if (person.hp <= 0) {
+            this.killNpc(person);
+            this.triggerMurder(worldX, worldY, person.x, person.y, killerType);
+            return;
+        }
+        person.lastAttackerType = killerType;
+        person.fleeToAllies = true;
+        person.aggressionMode = null;
+        if (!person.baseSpeed) {
+            person.baseSpeed = person.speed || 0.8;
+        }
+        person.speed = person.baseSpeed * 1.5;
+    }
+
+    damageZombie(person, amount) {
+        if (!person || !person.isZombie || person.isDead) return;
+        person.hp = Math.max(0, person.hp - amount);
+        if (person.hp <= 0) {
+            this.killZombie(person);
+        }
+    }
+
+    damagePlayer(amount) {
+        if (this.isDead) return;
+        this.player.hp = Math.max(0, this.player.hp - amount);
+        if (this.player.hp <= 0) {
+            this.killPlayer();
+        }
+    }
+
+    drawHpBar(px, py, width, height, hp, maxHp, color) {
+        if (maxHp <= 0 || hp >= maxHp) return;
+        const clamped = Math.max(0, Math.min(maxHp, hp));
+        const ratio = clamped / maxHp;
+        const x = px - width / 2;
+        const y = py - height / 2;
+        this.viewCtx.save();
+        this.viewCtx.globalAlpha = 0.9;
+        this.viewCtx.fillStyle = 'rgba(8, 10, 20, 0.85)';
+        this.viewCtx.fillRect(x - 1, y - 1, width + 2, height + 2);
+        this.viewCtx.fillStyle = color;
+        this.viewCtx.fillRect(x, y, width * ratio, height);
+        this.viewCtx.restore();
+    }
+
+    showGameOver() {
+        if (this.gameOverScreen) {
+            this.gameOverScreen.classList.remove('hidden');
+        }
+    }
+
+    hideGameOver() {
+        if (this.gameOverScreen) {
+            this.gameOverScreen.classList.add('hidden');
+        }
+    }
+
+    restartGame() {
+        this.isDead = false;
+        this.isPaused = false;
+        this.deathSeverity = 0;
+        this.deathTurnsRemaining = 0;
+        this.input = { up: false, down: false, left: false, right: false };
+        this.hoveredNpc = null;
+        this.hoveredGrave = null;
+        this.viewTransition = null;
+        this.deathSources = [];
+        this.localPeople.clear();
+        this.localGrids.clear();
+        this.initGrid();
+        this.spawnPlayer();
+        this.player.hp = this.player.maxHp;
+        this.started = true;
+        const startScreen = document.getElementById('start-screen');
+        if (startScreen) startScreen.classList.add('hidden');
+        this.hideGameOver();
+        this.start();
+    }
+
+    killPlayer() {
+        if (this.isDead) return;
+        this.isDead = true;
+        this.isPaused = true;
+        this.input = { up: false, down: false, left: false, right: false };
+        this.clearNpcHover();
+        this.showGameOver();
     }
 
     updateZombies(dt) {
         if (!this.started) return;
+        if (this.isDead) return;
         if (this.viewMode !== 'game') return;
         if (this.viewTransition && this.viewTransition.active) return;
 
         const cell = this.grid[this.player.worldY]?.[this.player.worldX];
-        if (!cell || cell.population <= 0 || (cell.type !== 'VILLAGE' && cell.type !== 'CITY')) return;
+        if (!cell) return;
 
-        const count = this.getLocalPeopleCount(cell);
-        if (count <= 0) return;
+        let people = null;
+        if (cell.type === 'VILLAGE' || cell.type === 'CITY') {
+            const count = this.getLocalPeopleCount(cell);
+            if (count <= 0) return;
+            people = this.getLocalPeople(this.player.worldX, this.player.worldY, count);
+        } else {
+            const entry = this.localPeople.get(`${this.player.worldX},${this.player.worldY}`);
+            if (!entry || !entry.people.some(p => p.isZombie && !p.isDead)) return;
+            people = entry.people;
+        }
 
         const grid = this.getLocalGrid(this.player.worldX, this.player.worldY);
-        const people = this.getLocalPeople(this.player.worldX, this.player.worldY, count);
 
         for (const zombie of people) {
             if (!zombie.isZombie) continue;
             zombie.alertTimer = Math.max(0, zombie.alertTimer - dt);
+            if (zombie.attackCooldown > 0) {
+                zombie.attackCooldown = Math.max(0, zombie.attackCooldown - dt);
+            }
+            if (this.isPositionBlockedWithRadius(this.player.worldX, this.player.worldY, zombie.x + 0.5, zombie.y + 0.5, CONFIG.ZOMBIE_COLLIDER_RADIUS)) {
+                const escape = this.findNearestValidLocalCell(this.player.worldX, this.player.worldY, zombie.x, zombie.y);
+                if (escape) {
+                    zombie.x = escape.localX;
+                    zombie.y = escape.localY;
+                }
+            }
 
             let target = null;
             let targetDist = CONFIG.ZOMBIE_SIGHT_RADIUS;
@@ -2704,15 +3127,12 @@ class Game {
                 }
             }
 
-            if (target && targetDist <= CONFIG.ZOMBIE_ATTACK_RADIUS) {
-                target.isDead = true;
-                target.isZombie = false;
-                target.hasTarget = false;
-                target.idle = 999;
-                target.speed = 0;
-                if (this.hoveredNpc?.person === target) {
+            if (target && targetDist <= CONFIG.ZOMBIE_ATTACK_RADIUS && zombie.attackCooldown <= 0) {
+                this.damageNpc(target, 1, this.player.worldX, this.player.worldY, 'zombie');
+                if (this.hoveredNpc?.person === target && target.isDead) {
                     this.clearNpcHover();
                 }
+                zombie.attackCooldown = 0.9;
             }
         }
     }
