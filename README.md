@@ -57,7 +57,7 @@ Each turn runs in this order:
   - Hover an NPC in range to get a sword cursor, then click to kill (creates a grave).
   - Hover a grave in range to get a dark‑magic cursor, then click to raise a zombie.
   - Zombies move slower than the player, avoid obstacles, and attack nearby NPCs.
-  - NPCs can witness murders and retaliate; “UWAGA” appears above alerted NPCs.
+  - NPCs can witness murders and retaliate; “ALERT” appears above alerted NPCs.
 
 ## Controls
 - Click (world map): kill / disturb
@@ -76,8 +76,9 @@ Note: 1 TPS = 1 year per second, and each simulation turn advances the world by 
 - World map panel displays the current area type plus the Local View tile under the player.
 - If the current world cell is a village or city, its name is shown under the world map.
 - HP bars appear above player/NPCs when damaged and hide at full health.
-- Game Over screen appears on player death with a restart option.
-- The current year is displayed at the bottom of the screen (starts at year 1).
+- Player death triggers a sleep screen with a wake timer; time continues to pass.
+- The current year and total kills (player + zombies) are displayed at the bottom of the screen (starts at year 1).
+- On wake, the player appears on the nearest non-city tile to the death location; all zombies are destroyed.
 
 ## Visual Reference
 `visual-reference.html` lists:

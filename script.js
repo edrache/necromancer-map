@@ -281,6 +281,7 @@ class Cell {
         this.population = (type === 'VILLAGE') ? 10 : (type === 'CITY' ? 50 : 0);
         this.sustain = 0;
         this.stability = 1.0;
+        this.regionId = -1;
         this.targetSustain = 0; // For diffusion buffering
         this.cityName = null;
 
@@ -296,6 +297,7 @@ class Region {
         this.populationDemand = 0;
         this.deathSeverity = 0;
         this.stability = 1.0;
+        this.id = -1;
     }
 
     calculateMetrics() {
@@ -330,7 +332,7 @@ class Game {
         this.localPeople = new Map();
         this.pendingZombieTransfers = [];
         this.isPaused = true;
-        this.isDead = false;
+        this.isSleeping = false;
         this.deathSeverity = 0;
         this.deathTurnsRemaining = 0;
         this.mouseX = 0;
@@ -340,10 +342,13 @@ class Game {
         this.hoveredGrave = null;
         this.tooltip = document.getElementById('city-tooltip');
         this.gameOverScreen = document.getElementById('game-over-screen');
-        this.restartBtn = document.getElementById('restart-btn');
 
         this.tps = 1;
         this.year = 1;
+        this.killCount = 0;
+        this.sleepYearsRemaining = 0;
+        this.deathWorldX = null;
+        this.deathWorldY = null;
         this.started = false;
         this.worldCellSize = CONFIG.CELL_SIZE;
         this.viewCellSize = CONFIG.VIEW_CELL_SIZE;
@@ -380,10 +385,6 @@ class Game {
             this.start();
             document.getElementById('start-screen').classList.add('hidden');
         });
-
-        if (this.restartBtn) {
-            this.restartBtn.addEventListener('click', () => this.restartGame());
-        }
 
         // Interactions
         this.worldCanvas.addEventListener('mousedown', (e) => this.handleClick(e));
@@ -627,7 +628,7 @@ class Game {
     }
 
     step() {
-        if (this.viewMode === 'game') {
+        if (this.viewMode === 'game' && !this.isSleeping) {
             return;
         }
         this.cityErosionThisTurn = new Set();
@@ -642,14 +643,21 @@ class Game {
         this.detectRegions();
         this.checkRepression();
         this.year += 1;
+        if (this.isSleeping) {
+            this.sleepYearsRemaining = Math.max(0, this.sleepYearsRemaining - 1);
+            if (this.sleepYearsRemaining === 0) {
+                this.wakePlayer();
+            }
+        }
         this.updateYearDisplay();
     }
 
     updateYearDisplay() {
         const yearDisplay = document.getElementById('year-display');
         if (yearDisplay) {
-            yearDisplay.textContent = `Rok ${this.year}`;
+            yearDisplay.textContent = `Year ${this.year} • Kills ${this.killCount}`;
         }
+        this.updateSleepOverlay();
     }
 
     updateDeathSources() {
@@ -1090,6 +1098,7 @@ class Game {
     detectRegions() {
         const visited = new Set();
         this.regions = [];
+        let regionIdCounter = 0;
 
         for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
             for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
@@ -1097,6 +1106,7 @@ class Game {
                 if (visited.has(cell) || cell.type === 'MOUNTAIN' || cell.type === 'WATER') continue;
 
                 const region = new Region();
+                region.id = regionIdCounter++;
                 const queue = [cell];
                 visited.add(cell);
 
@@ -1112,6 +1122,12 @@ class Game {
                     });
                 }
                 region.calculateMetrics();
+                let stabilitySum = 0;
+                region.cells.forEach((regionCell) => {
+                    regionCell.regionId = region.id;
+                    stabilitySum += regionCell.stability;
+                });
+                region.stability = region.cells.length > 0 ? (stabilitySum / region.cells.length) : 1.0;
                 this.regions.push(region);
             }
         }
@@ -1119,13 +1135,32 @@ class Game {
 
     updateUI() {
         const status = document.getElementById('game-status');
-        if (this.isDead) {
-            status.innerText = 'You were slain. The island remembers.';
+        if (this.isSleeping) {
+            const remaining = this.sleepYearsRemaining;
+            status.innerText = `You were slain. Dreaming... Wake in ${remaining} year${remaining === 1 ? '' : 's'}.`;
             return;
         }
         if (this.regions.length > 0) {
-            const avgStability = this.regions.reduce((acc, r) => acc + r.stability, 0) / this.regions.length;
-            status.innerText = `World Stability: ${Math.round(avgStability * 100)}% | Regions: ${this.regions.length} | Severity: ${Math.floor(this.deathSeverity)}`;
+            let totalCells = 0;
+            let globalStabilitySum = 0;
+            this.regions.forEach((region) => {
+                totalCells += region.cells.length;
+                globalStabilitySum += region.stability * region.cells.length;
+            });
+            const globalStability = totalCells > 0 ? (globalStabilitySum / totalCells) : 1.0;
+
+            const playerCell = this.grid[this.player.worldY]?.[this.player.worldX] || null;
+            let localStability = null;
+            if (playerCell && typeof playerCell.regionId === 'number' && playerCell.regionId >= 0) {
+                const region = this.regions[playerCell.regionId];
+                if (region) localStability = region.stability;
+            }
+
+            const localText = (localStability === null)
+                ? 'Local Stability: -'
+                : `Local Stability: ${Math.round(localStability * 100)}%`;
+
+            status.innerText = `Global Stability: ${Math.round(globalStability * 100)}% | ${localText} | Regions: ${this.regions.length} | Severity: ${Math.floor(this.deathSeverity)}`;
         }
     }
 
@@ -1459,7 +1494,7 @@ class Game {
                 this.viewCtx.globalAlpha = 1.0;
                 this.viewCtx.fillStyle = '#f97316';
                 this.viewCtx.font = `${fontSize * 0.4}px "Cinzel","Cormorant Garamond","Outfit","Segoe UI"`;
-                this.viewCtx.fillText('UWAGA', px, py - fontSize * 0.65);
+                this.viewCtx.fillText('ALERT', px, py - fontSize * 0.65);
             }
 
             if (!person.isDead && person.hp < person.maxHp) {
@@ -1472,7 +1507,6 @@ class Game {
 
     updateLocalPeople(dt) {
         if (!this.started) return;
-        if (this.isDead) return;
         const targets = [];
         if (this.viewTransition && this.viewTransition.active) {
             targets.push([this.viewTransition.fromX, this.viewTransition.fromY]);
@@ -1664,7 +1698,7 @@ class Game {
 
     getNpcAggroTarget(person, people, grid, worldX, worldY) {
         if (person.aggressionMode === 'player') {
-            if (this.isDead) return null;
+            if (this.isSleeping) return null;
             return { type: 'player', x: this.player.localX, y: this.player.localY };
         }
         if (person.aggressionMode === 'zombie') {
@@ -2329,7 +2363,7 @@ class Game {
 
     updatePlayer(dt) {
         if (!this.started) return;
-        if (this.isDead) return;
+        if (this.isSleeping) return;
         if (this.viewMode === 'game') {
             this.ensurePlayerPassable();
         }
@@ -2837,7 +2871,7 @@ class Game {
 
     handleViewClick(e) {
         if (!this.started) return;
-        if (this.isDead) return;
+        if (this.isSleeping) return;
         if (this.viewMode !== 'game') return;
         if (this.hoveredGrave?.person) {
             this.raiseZombie(this.hoveredGrave.person);
@@ -2931,6 +2965,10 @@ class Game {
         person.hp = Math.max(0, person.hp - amount);
         if (person.hp <= 0) {
             this.killNpc(person);
+            if (killerType === 'player' || killerType === 'zombie') {
+                this.killCount += 1;
+                this.updateYearDisplay();
+            }
             this.triggerMurder(worldX, worldY, person.x, person.y, killerType);
             return;
         }
@@ -2952,7 +2990,7 @@ class Game {
     }
 
     damagePlayer(amount) {
-        if (this.isDead) return;
+        if (this.isSleeping) return;
         this.player.hp = Math.max(0, this.player.hp - amount);
         if (this.player.hp <= 0) {
             this.killPlayer();
@@ -2986,12 +3024,24 @@ class Game {
         }
     }
 
+    updateSleepOverlay() {
+        if (!this.gameOverScreen) return;
+        if (!this.isSleeping) return;
+        const remaining = this.sleepYearsRemaining;
+        const remainingEl = document.getElementById('sleep-remaining');
+        if (remainingEl) {
+            remainingEl.textContent = String(remaining);
+        }
+    }
+
     restartGame() {
-        this.isDead = false;
+        this.isSleeping = false;
         this.isPaused = false;
         this.deathSeverity = 0;
         this.deathTurnsRemaining = 0;
         this.year = 1;
+        this.killCount = 0;
+        this.sleepYearsRemaining = 0;
         this.updateYearDisplay();
         this.input = { up: false, down: false, left: false, right: false };
         this.hoveredNpc = null;
@@ -3011,17 +3061,28 @@ class Game {
     }
 
     killPlayer() {
-        if (this.isDead) return;
-        this.isDead = true;
-        this.isPaused = true;
+        if (this.isSleeping) return;
+        this.isSleeping = true;
+        this.isPaused = false;
+        this.sleepYearsRemaining = this.killCount;
+        this.deathWorldX = this.player.worldX;
+        this.deathWorldY = this.player.worldY;
         this.input = { up: false, down: false, left: false, right: false };
         this.clearNpcHover();
+        this.viewTransition = null;
+        this.destroyAllZombies();
+        this.movePlayerOutsideCities();
+        if (this.sleepYearsRemaining === 0) {
+            this.wakePlayer();
+            return;
+        }
         this.showGameOver();
+        this.updateSleepOverlay();
     }
 
     updateZombies(dt) {
         if (!this.started) return;
-        if (this.isDead) return;
+        if (this.isSleeping) return;
         if (this.viewMode !== 'game') return;
         if (this.viewTransition && this.viewTransition.active) return;
 
@@ -3150,6 +3211,148 @@ class Game {
                 zombie.attackCooldown = 0.9;
             }
         }
+    }
+
+    destroyAllZombies() {
+        this.pendingZombieTransfers = [];
+        for (const entry of this.localPeople.values()) {
+            if (!entry || !Array.isArray(entry.people)) continue;
+            for (const person of entry.people) {
+                if (!person || !person.isZombie || person.isDead) continue;
+                person.isDead = true;
+                person.isZombie = false;
+                person.hideGrave = true;
+                person.hp = 0;
+            }
+        }
+    }
+
+    movePlayerOutsideCities() {
+        const spot = this.findNonCityPlayerSpot() || this.findAnyValidPlayerSpot();
+        if (spot) {
+            this.player.worldX = spot.worldX;
+            this.player.worldY = spot.worldY;
+            this.player.localX = spot.localX;
+            this.player.localY = spot.localY;
+            return;
+        }
+        this.spawnPlayer();
+    }
+
+    findNonCityPlayerSpot() {
+        const candidates = [];
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const cell = this.grid[y]?.[x];
+                if (!cell) continue;
+                if (cell.type === 'CITY' || cell.type === 'VILLAGE') continue;
+                candidates.push([x, y]);
+            }
+        }
+        if (!candidates.length) return null;
+        const attempts = 200;
+        for (let i = 0; i < attempts; i++) {
+            const [worldX, worldY] = candidates[Math.floor(Math.random() * candidates.length)];
+            const localX = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+            const localY = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+            if (!this.isPositionBlocked(worldX, worldY, localX, localY)) {
+                return { worldX, worldY, localX, localY };
+            }
+        }
+        for (const [worldX, worldY] of candidates) {
+            for (let i = 0; i < 20; i++) {
+                const localX = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+                const localY = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+                if (!this.isPositionBlocked(worldX, worldY, localX, localY)) {
+                    return { worldX, worldY, localX, localY };
+                }
+            }
+        }
+        return null;
+    }
+
+    wakePlayer() {
+        if (!this.isSleeping) return;
+        this.isSleeping = false;
+        this.player.hp = this.player.maxHp;
+        this.sleepYearsRemaining = 0;
+        this.wakePlayerNearDeath();
+        this.updateYearDisplay();
+        this.hideGameOver();
+    }
+
+    wakePlayerNearDeath() {
+        const originX = typeof this.deathWorldX === 'number' ? this.deathWorldX : this.player.worldX;
+        const originY = typeof this.deathWorldY === 'number' ? this.deathWorldY : this.player.worldY;
+        const spot = this.findNearestNonCitySpot(originX, originY) || this.findNonCityPlayerSpot() || this.findAnyValidPlayerSpot();
+        if (spot) {
+            this.player.worldX = spot.worldX;
+            this.player.worldY = spot.worldY;
+            this.player.localX = spot.localX;
+            this.player.localY = spot.localY;
+            return;
+        }
+        this.spawnPlayer();
+    }
+
+    findNearestNonCitySpot(originX, originY) {
+        const maxRadius = Math.max(CONFIG.GRID_SIZE, CONFIG.GRID_SIZE);
+        const initialRadius = 3;
+        let best = null;
+        let bestDist = Infinity;
+
+        for (let dy = -initialRadius; dy <= initialRadius; dy++) {
+            for (let dx = -initialRadius; dx <= initialRadius; dx++) {
+                const dist = Math.abs(dx) + Math.abs(dy);
+                if (dist > initialRadius) continue;
+                const worldX = originX + dx;
+                const worldY = originY + dy;
+                if (worldX < 0 || worldY < 0 || worldX >= CONFIG.GRID_SIZE || worldY >= CONFIG.GRID_SIZE) continue;
+                const cell = this.grid[worldY]?.[worldX];
+                if (!cell) continue;
+                if (cell.type === 'CITY' || cell.type === 'VILLAGE') continue;
+                const localSpot = this.findValidLocalSpotInTile(worldX, worldY);
+                if (!localSpot) continue;
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = { worldX, worldY, localX: localSpot.localX, localY: localSpot.localY };
+                }
+            }
+        }
+
+        if (best) return best;
+
+        for (let r = initialRadius + 1; r < maxRadius; r++) {
+            for (let dx = -r; dx <= r; dx++) {
+                const dy = r - Math.abs(dx);
+                const candidates = [
+                    [originX + dx, originY + dy],
+                    [originX + dx, originY - dy]
+                ];
+                for (const [worldX, worldY] of candidates) {
+                    if (worldX < 0 || worldY < 0 || worldX >= CONFIG.GRID_SIZE || worldY >= CONFIG.GRID_SIZE) continue;
+                    const cell = this.grid[worldY]?.[worldX];
+                    if (!cell) continue;
+                    if (cell.type === 'CITY' || cell.type === 'VILLAGE') continue;
+                    const localSpot = this.findValidLocalSpotInTile(worldX, worldY);
+                    if (localSpot) {
+                        return { worldX, worldY, localX: localSpot.localX, localY: localSpot.localY };
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    findValidLocalSpotInTile(worldX, worldY) {
+        for (let i = 0; i < 40; i++) {
+            const localX = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+            const localY = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+            if (!this.isPositionBlocked(worldX, worldY, localX, localY)) {
+                return { localX, localY };
+            }
+        }
+        return null;
     }
 
     hasLineOfSight(worldX, worldY, grid, x0, y0, x1, y1) {

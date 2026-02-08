@@ -61,7 +61,7 @@
                     <div class="hint-item"><span class="key">Shift+D</span> <span class="action">Spawn Death Source</span></div>
                     <div class="hint-item"><span class="key">F</span> <span class="action">Toggle Fullscreen</span></div>
                     <div class="hint-item"><span class="key">Space</span> <span class="action">Pause / Resume</span></div>
-                    <div class="hint-item"><span class="key">UWAGA</span> <span class="action">NPCs witnessed a murder and will retaliate</span></div>
+                    <div class="hint-item"><span class="key">ALERT</span> <span class="action">NPCs witnessed a murder and will retaliate</span></div>
                 </div>
 
                 <div id="time-controls">
@@ -120,15 +120,14 @@
 
         <div id="game-over-screen" class="mystic-panel center-panel hidden">
             <div class="title-wrap">
-                <h2 class="death-title">GAME OVER</h2>
-                <p class="death-text">The island remembers your fall.</p>
-                <p class="death-timer">Restart to awaken anew.</p>
+                <h2 class="death-title">SLEEPING</h2>
+                <p class="death-text">Your spirit drifts beyond the veil.</p>
+                <p class="death-timer">Wake in <span id="sleep-remaining">0</span> years.</p>
             </div>
-            <button id="restart-btn" class="primary-btn">RESTART</button>
         </div>
 
         <div id="city-tooltip" class="mystic-tooltip hidden"></div>
-        <div id="year-display" class="year-display">Rok 1</div>
+        <div id="year-display" class="year-display">Year 1 • Kills 0</div>
     </div>
     <script src="script.js"></script>
 </body>
