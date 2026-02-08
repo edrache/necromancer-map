@@ -1,101 +1,101 @@
 # Necromancer Island
 
-Mroczna, minimalistyczna symulacja ekosystemu na siatce 20x20, w ktorej jako nekromanta zaklocasz lokalna rownowage. Gra nie ma klasycznego celu zwyciestwa: obserwujesz, jak swiat reaguje na ingerencje, jak regiony stabilizuja sie lub zapadaja, oraz jak miasta bronia sie przed glodem.
+A dark, minimalist ecosystem simulation on a 20x20 grid where you play a necromancer disrupting local equilibrium. There is no classic win condition; the game is about experimentation, observation, and the emergent collapse or recovery of regions after your interference.
 
-## Najwazniejsze cechy
-- Dwuetapowy widok: mapa swiata (20x20) oraz lokalny widok terenu (20x20) generowany na biezaco.
-- Symulacja zasobow (sustain) z produkcja, dyfuzja i konsumpcja.
-- Stabilnosc komorek wpływa na ekspansje, regresje i wizualna czytelnosc.
-- Miasta i wioski grupuja sie w aglomeracje z unikatowymi nazwami.
-- Nekromanta wprowadza chaos: bezposrednie zabojstwa i zrodla smierci.
-- Sterowanie czasem: pauza, predkosci tur, suwak TPS.
+## Highlights
+- Dual view: world map (20x20) plus a dynamically generated local view (20x20).
+- Sustain resource simulation with production, diffusion, and consumption.
+- Stability drives expansion, regression, and visual feedback.
+- Villages and cities form named agglomerations with shared identity.
+- Necromancer actions: direct killing and short‑lived Death Sources.
+- Time controls: pause, speed presets, and TPS slider.
 
-## Fabuła i cel rozgrywki
-Wcielasz sie w nekromante, ktory burzy naturalna rownowage. Nie ma warunku zwyciestwa. Twoja rola to eksperymentowanie z systemem: destabilizuj, obserwuj, reaguj.
+## Story and Goal
+You are a necromancer who breaks the natural balance. There is no victory screen. The goal is to explore how systems fail, stabilize, or overcorrect when you intervene.
 
-## Swiat gry
-Mapa swiata to siatka 20x20 pol. Kazde pole ma typ, stabilnosc, zasoby i ewentualna populacje.
+## World
+The world is a 20x20 grid. Each cell has a type, stability, sustain, and (for settlements) population.
 
-Typy terenu:
-- Rownina (PLAIN)
-- Las (FOREST)
-- Woda (WATER)
-- Wioska (VILLAGE)
-- Miasto (CITY)
-- Gory (MOUNTAIN)
+Terrain types:
+- Plain (PLAIN)
+- Forest (FOREST)
+- Water (WATER)
+- Village (VILLAGE)
+- City (CITY)
+- Mountain (MOUNTAIN)
 
-## Symulacja (kolejnosc tury)
-Kazda tura wykonuje sie w kolejnosci:
-1. Aktualizacja zrodel smierci.
-2. Produkcja zasobow przez lasy i wode.
-3. Dyfuzja zasobow pomiedzy komorkami.
-4. Aktualizacja rozmiarow grup miejskich.
-5. Konsumpcja zasobow przez populacje.
-6. Regresja i ekspansja terenow.
-7. Odnawianie lasow.
-8. Korekty nazw miast po rozpadzie grup.
-9. Detekcja regionow (lokalnych ekosystemow).
-10. Aktualizacja UI.
+## Simulation (Turn Order)
+Each turn runs in this order:
+1. Update Death Sources.
+2. Produce sustain (forests, water).
+3. Diffuse sustain.
+4. Update city group sizes.
+5. Consume sustain.
+6. Regression and expansion.
+7. Forest regrowth.
+8. City name updates after splits.
+9. Region detection (local ecosystems).
+10. UI refresh.
 
-## Zasoby, populacja i stabilnosc
-- Lasy i woda produkuja sustain.
-- Wioski i miasta konsumują sustain proporcjonalnie do populacji i rozmiaru aglomeracji.
-- Brak zasobow powoduje spadek stabilnosci i wymieranie ludnosci.
-- Wysoka stabilnosc sprzyja ekspansji, niska powoduje regresje (np. lasy lub miasta moga zamienic sie w rowniny).
+## Sustain, Population, Stability
+- Forests and water generate sustain.
+- Villages and cities consume sustain based on population and agglomeration size.
+- Shortages reduce stability and kill population.
+- High stability encourages expansion; low stability triggers regression (e.g., forests or cities can revert to plains).
 
-## Miasta, nazwy i erozja
-- Sasiednie wioski i miasta lacza sie w grupy o jednej nazwie.
-- Rozmiar grupy zwieksza zapotrzebowanie na zasoby.
-- Miasta moga spalac pobliskie lasy, by przetrwac, kosztem stabilnosci.
-- Przy chronicznych niedoborach miasta eroduja (miasto -> wioska -> rownina).
+## Cities, Names, and Erosion
+- Neighboring villages and cities form named groups.
+- Group size increases demand.
+- Cities can burn nearby forests to survive, at a stability cost.
+- Persistent shortages cause erosion (city → village → plain).
 
-## Akcje nekromanty
-- Klikniecie na mapie: natychmiastowe zabojstwo populacji i spadek stabilnosci pola.
-- Shift + D: tworzy Zrodlo Smierci, ktore przez kilka tur obniza stabilnosc sasiadow i zabija czesc populacji.
+## Necromancer Actions
+- Click on the world map: instantly kills population and drops stability on the selected cell.
+- Shift + D: spawn a Death Source that drains nearby stability and kills a portion of population for a few turns.
 
-## Sterowanie
-- Klik (mapa): zabojstwo / zaklocenie
-- WASD: ruch postaci w lokalnym widoku
-- Shift + D: Zrodlo Smierci
-- F: fullscreen
-- Space: pauza / wznowienie
-- Przyciski I/II/V/X lub klawisze 1-4: szybkosci tur (1, 2, 5, 10 TPS)
-- Suwak TPS: plynna zmiana szybkosci (1-20 TPS)
+## Controls
+- Click (world map): kill / disturb
+- WASD: move in local view
+- Shift + D: spawn Death Source
+- F: toggle fullscreen
+- Space: pause / resume
+- Buttons I/II/V/X or keys 1–4: speed presets (1, 2, 5, 10 TPS)
+- TPS slider: fine speed control (1–20 TPS)
 
-## Interfejs
-- Mapa swiata pokazuje aktualne typy terenu oraz stabilnosc (jasnosc/nasycenie).
-- Widok lokalny generuje szczegolowy wycinek otoczenia na podstawie typu pola.
-- Najechanie na wioske/miasto pokazuje nazwe i podswietla cala aglomeracje.
+## UI Notes
+- World map shows terrain types and stability via brightness/saturation.
+- Local view renders a detailed vignette based on the current world cell.
+- Hovering a village/city displays its name and highlights its whole agglomeration.
 
-## Uruchomienie
-Opcja 1: otworz `index.html` w przegladarce.
+## Running the Game
+Option 1: open `index.html` in a browser.
 
-Opcja 2: uruchom lokalny serwer statyczny (przyklad):
+Option 2: run a local static server (example):
 ```bash
 python -m http.server 8080
 ```
-Nastepnie otworz `http://localhost:8080`.
+Then open `http://localhost:8080`.
 
-## Konfiguracja
-Najwazniejsze parametry gry znajduja sie w obiekcie `CONFIG` w `script.js`, m.in.:
-- rozmiar siatki, predkosc ruchu, TPS
-- wspolczynniki dyfuzji, konsumpcji, ekspansji i regresji
-- progowe wartosci stabilnosci
+## Configuration
+Key parameters live in `CONFIG` in `script.js`, including:
+- grid size, movement speed, TPS
+- diffusion, consumption, expansion, regression rates
+- stability thresholds
 
-Typy terenu i ich bazowe parametry mozna modyfikowac w `CELL_TYPES` w `script.js`.
+Terrain defaults are defined in `CELL_TYPES` in `script.js`.
 
-## Ograniczenia i stan funkcji
-- Mechanika represji/"smierci" nekromanty jest przygotowana w konfiguracji, ale aktualnie wylaczona w kodzie (funkcja `checkRepression()` jest pusta).
-- Widok lokalny jest wizualizacja, nie wplywa bezposrednio na symulacje.
+## Limitations
+- Repression / necromancer “death” is scaffolded but currently disabled (the `checkRepression()` function is empty).
+- The local view is visual only and does not affect simulation logic.
 
-## Struktura projektu
-- `index.html` - layout i UI
-- `style.css` - stylizacja
-- `script.js` - cala logika symulacji i renderowania
-- `Mechanika_Gry.md` oraz `Design/` - dokumentacja i zalozenia projektowe
+## Project Structure
+- `index.html` — layout and UI
+- `style.css` — styling
+- `script.js` — simulation and rendering
+- `Mechanika_Gry.md`, `Design/` — design documentation
 
-## Licencja
-Brak zdefiniowanej licencji. Jesli chcesz otworzyc projekt, dodaj odpowiedni plik LICENSE.
+## License
+No license specified yet. Add a LICENSE file if you want to open-source the project.
 
 ## Credits
-Fonty z Google Fonts: Cinzel, Cinzel Decorative, Cormorant Garamond, Outfit.
+Fonts from Google Fonts: Cinzel, Cinzel Decorative, Cormorant Garamond, Outfit.
