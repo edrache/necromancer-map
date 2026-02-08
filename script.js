@@ -190,6 +190,15 @@ const LOCAL_VIEW_EMOJI_DENSITY = {
     CITY: 0.9
 };
 
+const WORLD_TYPE_LABELS = {
+    PLAIN: "Plains",
+    FOREST: "Forest",
+    WATER: "Water",
+    MOUNTAIN: "Mountain",
+    VILLAGE: "Village",
+    CITY: "City"
+};
+
 function hash01(...values) {
     let h = 2166136261;
     for (const value of values) {
@@ -307,6 +316,8 @@ class Game {
         this.worldCellSize = CONFIG.CELL_SIZE;
         this.viewCellSize = CONFIG.VIEW_CELL_SIZE;
         this.input = { up: false, down: false, left: false, right: false };
+        this.viewMode = 'god';
+        this.playerColliderRadius = 0.375; // in local cell units (75% diameter)
         this.player = {
             worldX: 0,
             worldY: 0,
@@ -320,6 +331,7 @@ class Game {
         this.initSliders();
         this.initTimeControls();
         this.initUiToggle();
+        this.initViewModeToggle();
         this.resize();
         window.addEventListener('resize', () => this.resize());
 
@@ -371,6 +383,32 @@ class Game {
             toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
             toggleBtn.textContent = isCollapsed ? '▾' : '▴';
             this.resize();
+        });
+    }
+
+    initViewModeToggle() {
+        const buttons = Array.from(document.querySelectorAll('.mode-btn[data-view-mode]'));
+        if (!buttons.length) return;
+        buttons.forEach(btn => {
+            btn.addEventListener('click', () => this.setViewMode(btn.dataset.viewMode));
+        });
+        this.syncViewModeUi();
+    }
+
+    setViewMode(mode) {
+        if (mode !== 'god' && mode !== 'game') return;
+        if (this.viewMode === mode) return;
+        this.viewMode = mode;
+        this.syncViewModeUi();
+        if (this.viewMode === 'game') {
+            this.ensurePlayerPassable();
+        }
+    }
+
+    syncViewModeUi() {
+        const buttons = Array.from(document.querySelectorAll('.mode-btn[data-view-mode]'));
+        buttons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.viewMode === this.viewMode);
         });
     }
 
@@ -1029,9 +1067,47 @@ class Game {
         }
     }
 
+    updateWorldInfo() {
+        const typeEl = document.getElementById('world-info-type');
+        const localEl = document.getElementById('world-info-local');
+        const cityEl = document.getElementById('world-info-city');
+        if (!typeEl || !localEl || !cityEl) return;
+        const cell = this.grid[this.player.worldY] && this.grid[this.player.worldY][this.player.worldX]
+            ? this.grid[this.player.worldY][this.player.worldX]
+            : null;
+
+        if (!cell) {
+            typeEl.textContent = "Area: -";
+            localEl.textContent = "Local Tile: -";
+            cityEl.textContent = "Name: -";
+            cityEl.classList.add('is-hidden');
+            return;
+        }
+
+        const label = WORLD_TYPE_LABELS[cell.type] || cell.type;
+        typeEl.textContent = `Area: ${label}`;
+
+        const localGrid = this.getLocalGrid(this.player.worldX, this.player.worldY);
+        const localX = Math.max(0, Math.min(CONFIG.LOCAL_GRID_SIZE - 1, Math.floor(this.player.localX)));
+        const localY = Math.max(0, Math.min(CONFIG.LOCAL_GRID_SIZE - 1, Math.floor(this.player.localY)));
+        const localType = localGrid?.[localY]?.[localX] || "PLAIN";
+        const localLabel = WORLD_TYPE_LABELS[localType] || localType;
+        localEl.textContent = `Local Tile: ${localLabel}`;
+
+        if (cell.type === 'CITY' || cell.type === 'VILLAGE') {
+            const name = cell.cityName || "Unknown";
+            cityEl.textContent = `Name: ${name}`;
+            cityEl.classList.remove('is-hidden');
+        } else {
+            cityEl.textContent = "Name: -";
+            cityEl.classList.add('is-hidden');
+        }
+    }
+
     render() {
         this.renderWorld();
         this.renderView();
+        this.updateWorldInfo();
     }
 
     renderWorld() {
@@ -1170,6 +1246,7 @@ class Game {
 
     drawLocalGrid(worldX, worldY, offsetX, offsetY) {
         const grid = this.getLocalGrid(worldX, worldY);
+        const showObstacles = this.viewMode === 'game';
         for (let y = 0; y < CONFIG.LOCAL_GRID_SIZE; y++) {
             for (let x = 0; x < CONFIG.LOCAL_GRID_SIZE; x++) {
                 const type = grid[y][x];
@@ -1182,21 +1259,9 @@ class Game {
                     Math.min(22, colorBase.l + (colorSeed - 0.5) * colorBase.v)
                 );
                 const color = `hsl(${colorBase.h}, ${colorBase.s}%, ${lightness}%)`;
-                const emojiList = LOCAL_VIEW_EMOJIS[type] || LOCAL_VIEW_EMOJIS.PLAIN;
-                const emojiSeed = hash01(worldX, worldY, x, y, 73);
-                const density = LOCAL_VIEW_EMOJI_DENSITY[type] ?? 0.35;
-                const showEmoji = (type === 'VILLAGE' || type === 'CITY') ? true : emojiSeed < density;
-                let symbol = showEmoji
-                    ? emojiList[Math.floor(emojiSeed * emojiList.length) % emojiList.length]
-                    : '';
-
-                if (type === 'MOUNTAIN' && symbol && symbol !== '❄️') {
-                    const dist = Math.hypot(x - (CONFIG.LOCAL_GRID_SIZE - 1) / 2, y - (CONFIG.LOCAL_GRID_SIZE - 1) / 2);
-                    const maxDist = Math.hypot((CONFIG.LOCAL_GRID_SIZE - 1) / 2, (CONFIG.LOCAL_GRID_SIZE - 1) / 2) || 1;
-                    if (dist / maxDist < 0.45) {
-                        symbol = '❄️';
-                    }
-                }
+                const emojiInfo = this.getLocalCellEmojiInfo(worldX, worldY, x, y, type);
+                const showEmoji = emojiInfo.showEmoji;
+                const symbol = emojiInfo.symbol;
 
                 this.viewCtx.globalAlpha = 0.96;
                 this.viewCtx.fillStyle = color;
@@ -1230,9 +1295,36 @@ class Game {
                     this.viewCtx.arc(dotX, dotY, Math.max(0.6, this.viewCellSize * 0.04), 0, Math.PI * 2);
                     this.viewCtx.fill();
                 }
+
+                if (showObstacles && this.isBlockedCell(worldX, worldY, x, y, type)) {
+                    this.viewCtx.globalAlpha = 0.35;
+                    this.viewCtx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
+                    this.viewCtx.lineWidth = 1;
+                    this.viewCtx.strokeRect(px + 1, py + 1, this.viewCellSize - 2, this.viewCellSize - 2);
+                }
                 this.viewCtx.globalAlpha = 1.0;
             }
         }
+    }
+
+    getLocalCellEmojiInfo(worldX, worldY, x, y, type) {
+        const emojiList = LOCAL_VIEW_EMOJIS[type] || LOCAL_VIEW_EMOJIS.PLAIN;
+        const emojiSeed = hash01(worldX, worldY, x, y, 73);
+        const density = LOCAL_VIEW_EMOJI_DENSITY[type] ?? 0.35;
+        const showEmoji = (type === 'VILLAGE' || type === 'CITY') ? true : emojiSeed < density;
+        let symbol = showEmoji
+            ? emojiList[Math.floor(emojiSeed * emojiList.length) % emojiList.length]
+            : '';
+
+        if (type === 'MOUNTAIN' && symbol && symbol !== '❄️') {
+            const dist = Math.hypot(x - (CONFIG.LOCAL_GRID_SIZE - 1) / 2, y - (CONFIG.LOCAL_GRID_SIZE - 1) / 2);
+            const maxDist = Math.hypot((CONFIG.LOCAL_GRID_SIZE - 1) / 2, (CONFIG.LOCAL_GRID_SIZE - 1) / 2) || 1;
+            if (dist / maxDist < 0.45) {
+                symbol = '❄️';
+            }
+        }
+
+        return { showEmoji, symbol };
     }
 
     getLocalGrid(worldX, worldY) {
@@ -1731,6 +1823,30 @@ class Game {
     }
 
     spawnPlayer() {
+        const attemptLimit = 200;
+        for (let i = 0; i < attemptLimit; i++) {
+            const worldX = Math.floor(Math.random() * CONFIG.GRID_SIZE);
+            const worldY = Math.floor(Math.random() * CONFIG.GRID_SIZE);
+            const localX = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+            const localY = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
+            if (!this.isPositionBlocked(worldX, worldY, localX, localY)) {
+                this.player.worldX = worldX;
+                this.player.worldY = worldY;
+                this.player.localX = localX;
+                this.player.localY = localY;
+                return;
+            }
+        }
+
+        const fallback = this.findAnyValidPlayerSpot();
+        if (fallback) {
+            this.player.worldX = fallback.worldX;
+            this.player.worldY = fallback.worldY;
+            this.player.localX = fallback.localX;
+            this.player.localY = fallback.localY;
+            return;
+        }
+
         this.player.worldX = Math.floor(Math.random() * CONFIG.GRID_SIZE);
         this.player.worldY = Math.floor(Math.random() * CONFIG.GRID_SIZE);
         this.player.localX = Math.random() * (CONFIG.LOCAL_GRID_SIZE - 1);
@@ -1751,6 +1867,9 @@ class Game {
 
     updatePlayer(dt) {
         if (!this.started) return;
+        if (this.viewMode === 'game') {
+            this.ensurePlayerPassable();
+        }
         const dx = (this.input.right ? 1 : 0) - (this.input.left ? 1 : 0);
         const dy = (this.input.down ? 1 : 0) - (this.input.up ? 1 : 0);
         if (dx === 0 && dy === 0) return;
@@ -1759,10 +1878,7 @@ class Game {
         const moveX = (dx / length) * CONFIG.PLAYER_SPEED * dt;
         const moveY = (dy / length) * CONFIG.PLAYER_SPEED * dt;
 
-        this.player.localX += moveX;
-        this.player.localY += moveY;
-
-        this.handlePlayerWorldWrap();
+        this.movePlayer(moveX, moveY, this.viewMode === 'game');
     }
 
     handlePlayerWorldWrap() {
@@ -1827,6 +1943,207 @@ class Game {
                 dy,
                 progress: 0
             };
+        }
+    }
+
+    movePlayer(moveX, moveY, useCollision) {
+        const startWorldX = this.player.worldX;
+        const startWorldY = this.player.worldY;
+        let worldX = this.player.worldX;
+        let worldY = this.player.worldY;
+        let localX = this.player.localX;
+        let localY = this.player.localY;
+
+        if (!useCollision) {
+            localX += moveX;
+            localY += moveY;
+            const wrapped = this.wrapLocalPosition(worldX, worldY, localX, localY);
+            worldX = wrapped.worldX;
+            worldY = wrapped.worldY;
+            localX = wrapped.localX;
+            localY = wrapped.localY;
+        } else {
+            if (moveX !== 0) {
+                const attempt = this.wrapLocalPosition(worldX, worldY, localX + moveX, localY);
+                if (!this.isPositionBlocked(attempt.worldX, attempt.worldY, attempt.localX, attempt.localY)) {
+                    worldX = attempt.worldX;
+                    worldY = attempt.worldY;
+                    localX = attempt.localX;
+                    localY = attempt.localY;
+                }
+            }
+            if (moveY !== 0) {
+                const attempt = this.wrapLocalPosition(worldX, worldY, localX, localY + moveY);
+                if (!this.isPositionBlocked(attempt.worldX, attempt.worldY, attempt.localX, attempt.localY)) {
+                    worldX = attempt.worldX;
+                    worldY = attempt.worldY;
+                    localX = attempt.localX;
+                    localY = attempt.localY;
+                }
+            }
+        }
+
+        this.player.worldX = worldX;
+        this.player.worldY = worldY;
+        this.player.localX = localX;
+        this.player.localY = localY;
+
+        if (worldX !== startWorldX || worldY !== startWorldY) {
+            this.viewTransition = {
+                active: true,
+                fromX: startWorldX,
+                fromY: startWorldY,
+                toX: worldX,
+                toY: worldY,
+                dx: worldX - startWorldX,
+                dy: worldY - startWorldY,
+                progress: 0
+            };
+        }
+    }
+
+    wrapLocalPosition(worldX, worldY, localX, localY) {
+        let nextWorldX = worldX;
+        let nextWorldY = worldY;
+
+        if (localX < 0) {
+            if (nextWorldX > 0) {
+                localX += CONFIG.LOCAL_GRID_SIZE;
+                nextWorldX -= 1;
+            } else {
+                localX = 0;
+            }
+        } else if (localX >= CONFIG.LOCAL_GRID_SIZE) {
+            if (nextWorldX < CONFIG.GRID_SIZE - 1) {
+                localX -= CONFIG.LOCAL_GRID_SIZE;
+                nextWorldX += 1;
+            } else {
+                localX = CONFIG.LOCAL_GRID_SIZE - 1;
+            }
+        }
+
+        if (localY < 0) {
+            if (nextWorldY > 0) {
+                localY += CONFIG.LOCAL_GRID_SIZE;
+                nextWorldY -= 1;
+            } else {
+                localY = 0;
+            }
+        } else if (localY >= CONFIG.LOCAL_GRID_SIZE) {
+            if (nextWorldY < CONFIG.GRID_SIZE - 1) {
+                localY -= CONFIG.LOCAL_GRID_SIZE;
+                nextWorldY += 1;
+            } else {
+                localY = CONFIG.LOCAL_GRID_SIZE - 1;
+            }
+        }
+
+        return {
+            worldX: nextWorldX,
+            worldY: nextWorldY,
+            localX,
+            localY
+        };
+    }
+
+    isPositionBlocked(worldX, worldY, localX, localY) {
+        const grid = this.getLocalGrid(worldX, worldY);
+        const centerX = localX + 0.5;
+        const centerY = localY + 0.5;
+        const radius = this.playerColliderRadius;
+
+        const x0 = Math.max(0, Math.floor(centerX - radius));
+        const y0 = Math.max(0, Math.floor(centerY - radius));
+        const x1 = Math.min(CONFIG.LOCAL_GRID_SIZE - 1, Math.floor(centerX + radius));
+        const y1 = Math.min(CONFIG.LOCAL_GRID_SIZE - 1, Math.floor(centerY + radius));
+
+        for (let y = y0; y <= y1; y++) {
+            for (let x = x0; x <= x1; x++) {
+                const type = grid[y][x];
+                if (this.isBlockedCell(worldX, worldY, x, y, type)
+                    && this.circleIntersectsCell(centerX, centerY, radius, x, y)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    circleIntersectsCell(cx, cy, r, cellX, cellY) {
+        const closestX = Math.max(cellX, Math.min(cx, cellX + 1));
+        const closestY = Math.max(cellY, Math.min(cy, cellY + 1));
+        const dx = cx - closestX;
+        const dy = cy - closestY;
+        return (dx * dx + dy * dy) <= r * r;
+    }
+
+    isBlockedCell(worldX, worldY, cellX, cellY, type) {
+        if (type !== 'WATER' && type !== 'MOUNTAIN' && type !== 'FOREST') return false;
+        const emojiInfo = this.getLocalCellEmojiInfo(worldX, worldY, cellX, cellY, type);
+        return emojiInfo.showEmoji;
+    }
+
+    findNearestValidLocalCell(worldX, worldY, localX, localY) {
+        const grid = this.getLocalGrid(worldX, worldY);
+        let best = null;
+        let bestDist = Infinity;
+        for (let y = 0; y < CONFIG.LOCAL_GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.LOCAL_GRID_SIZE; x++) {
+                const type = grid[y][x];
+                if (this.isBlockedCell(worldX, worldY, x, y, type)) continue;
+                const dx = (x + 0.5) - localX;
+                const dy = (y + 0.5) - localY;
+                const dist = dx * dx + dy * dy;
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = { localX: x, localY: y };
+                }
+            }
+        }
+        return best;
+    }
+
+    findAnyValidPlayerSpot() {
+        for (let worldY = 0; worldY < CONFIG.GRID_SIZE; worldY++) {
+            for (let worldX = 0; worldX < CONFIG.GRID_SIZE; worldX++) {
+                const grid = this.getLocalGrid(worldX, worldY);
+                for (let y = 0; y < CONFIG.LOCAL_GRID_SIZE; y++) {
+                    for (let x = 0; x < CONFIG.LOCAL_GRID_SIZE; x++) {
+                        const type = grid[y][x];
+                        if (this.isBlockedCell(worldX, worldY, x, y, type)) continue;
+                        return { worldX, worldY, localX: x, localY: y };
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    ensurePlayerPassable() {
+        if (!this.started) return;
+        if (!this.isPositionBlocked(this.player.worldX, this.player.worldY, this.player.localX, this.player.localY)) {
+            return;
+        }
+
+        const nearby = this.findNearestValidLocalCell(
+            this.player.worldX,
+            this.player.worldY,
+            this.player.localX,
+            this.player.localY
+        );
+        if (nearby) {
+            this.player.localX = nearby.localX;
+            this.player.localY = nearby.localY;
+            return;
+        }
+
+        const fallback = this.findAnyValidPlayerSpot();
+        if (fallback) {
+            this.player.worldX = fallback.worldX;
+            this.player.worldY = fallback.worldY;
+            this.player.localX = fallback.localX;
+            this.player.localY = fallback.localY;
+            this.viewTransition = null;
         }
     }
 

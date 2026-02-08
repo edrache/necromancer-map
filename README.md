@@ -66,6 +66,13 @@ Each turn runs in this order:
 - World map shows terrain types and stability via brightness/saturation.
 - Local view renders a detailed vignette based on the current world cell.
 - Hovering a village/city displays its name and highlights its whole agglomeration.
+- World map panel displays the current area type plus the Local View tile under the player.
+- If the current world cell is a village or city, its name is shown under the world map.
+
+## Visual Reference
+`visual-reference.html` lists:
+- World map colors and emojis per terrain type.
+- Local view base HSL colors, lightness variation, and emoji sets.
 
 ## Running the Game
 Option 1: open `index.html` in a browser.

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Necromancer Island - Visual Reference</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+        body {
+            margin: 0;
+            padding: 32px;
+            background: #0a0a0f;
+            color: #e2e8f0;
+            font-family: "Outfit", "Segoe UI", sans-serif;
+            line-height: 1.4;
+        }
+        h1, h2 {
+            font-family: "Cinzel", "Times New Roman", serif;
+            letter-spacing: 1px;
+        }
+        h1 {
+            font-size: 1.6rem;
+            margin: 0 0 12px 0;
+        }
+        h2 {
+            font-size: 1.1rem;
+            margin: 24px 0 8px 0;
+            text-transform: uppercase;
+        }
+        .note {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+        }
+        th, td {
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            padding: 8px 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background: rgba(15, 23, 42, 0.7);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+        .swatch {
+            display: inline-block;
+            width: 72px;
+            height: 20px;
+            border-radius: 3px;
+            border: 1px solid rgba(148, 163, 184, 0.4);
+        }
+        .small {
+            color: #cbd5f5;
+            font-size: 0.85rem;
+        }
+        .section {
+            margin-bottom: 24px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Necromancer Island - Visual Reference</h1>
+    <div class="note">
+        This document lists all terrain color options and emojis used in the game, split by World Map and Local View.
+    </div>
+
+    <div class="section">
+        <h2>World Map Colors</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Base Color</th>
+                    <th>Hex</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>PLAIN</td><td><span class="swatch" style="background:#050505"></span></td><td>#050505</td></tr>
+                <tr><td>FOREST</td><td><span class="swatch" style="background:#0a2a0a"></span></td><td>#0a2a0a</td></tr>
+                <tr><td>WATER</td><td><span class="swatch" style="background:#0a1a2a"></span></td><td>#0a1a2a</td></tr>
+                <tr><td>VILLAGE</td><td><span class="swatch" style="background:#2a2a0a"></span></td><td>#2a2a0a</td></tr>
+                <tr><td>CITY</td><td><span class="swatch" style="background:#2a0a2a"></span></td><td>#2a0a2a</td></tr>
+                <tr><td>MOUNTAIN</td><td><span class="swatch" style="background:#1a1a1a"></span></td><td>#1a1a1a</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>World Map Emojis</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Emoji</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>PLAIN</td><td class="small">(none, uses symbol)</td></tr>
+                <tr><td>FOREST</td><td>🌲</td></tr>
+                <tr><td>WATER</td><td>🌊</td></tr>
+                <tr><td>VILLAGE</td><td>🏡</td></tr>
+                <tr><td>CITY</td><td>🏙️</td></tr>
+                <tr><td>MOUNTAIN</td><td>⛰️</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Local View Colors</h2>
+        <div class="note small">
+            Local View colors are HSL-based and receive per-tile lightness variation. Some tiles also draw a diagonal texture line.
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Base HSL</th>
+                    <th>Lightness Variation</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>PLAIN</td><td>hsl(110, 14%, 15%)</td><td>±2 (clamped 10-22)</td><td>May show diagonal line (~28% chance)</td></tr>
+                <tr><td>FOREST</td><td>hsl(125, 18%, 13%)</td><td>±2 (clamped 10-22)</td><td>May show diagonal line (~28% chance)</td></tr>
+                <tr><td>WATER</td><td>hsl(205, 18%, 13%)</td><td>±2 (clamped 10-22)</td><td>May show diagonal line (~28% chance)</td></tr>
+                <tr><td>MOUNTAIN</td><td>hsl(220, 8%, 15%)</td><td>±2 (clamped 10-22)</td><td>May show diagonal line (~28% chance)</td></tr>
+                <tr><td>VILLAGE</td><td>hsl(36, 14%, 16%)</td><td>±2 (clamped 10-22)</td><td>May show diagonal line (~28% chance)</td></tr>
+                <tr><td>CITY</td><td>hsl(255, 10%, 16%)</td><td>±2 (clamped 10-22)</td><td>May show diagonal line (~28% chance)</td></tr>
+            </tbody>
+        </table>
+        <div class="note small">
+            Diagonal line uses stroke rgba(255,255,255,0.35) at low opacity.
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Local View Emojis</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Emoji List</th>
+                    <th>Density</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>PLAIN</td><td>🌿, 🌱, 🍃</td><td>0.22</td></tr>
+                <tr><td>FOREST</td><td>🌲, 🌳, 🌲</td><td>0.25</td></tr>
+                <tr><td>WATER</td><td>🌊, 💧, 🫧</td><td>0.25</td></tr>
+                <tr><td>MOUNTAIN</td><td>⛰️, 🏔️, 🪨, ❄️</td><td>0.20</td></tr>
+                <tr><td>VILLAGE</td><td>🏡, 🛖, 🌾</td><td>0.85</td></tr>
+                <tr><td>CITY</td><td>🏙️, 🏢, 🌆</td><td>0.90</td></tr>
+            </tbody>
+        </table>
+        <div class="note small">
+            Villages and cities always show an emoji. Other types show emojis by density; if not shown, a small dot is rendered.
+        </div>
+    </div>
+</body>
+</html>

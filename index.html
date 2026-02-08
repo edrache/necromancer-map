@@ -22,9 +22,20 @@
             <div class="canvas-panel">
                 <div class="panel-label">WORLD MAP</div>
                 <canvas id="world-canvas"></canvas>
+                <div id="world-info" class="world-info">
+                    <div id="world-info-type" class="world-info-row">Area: -</div>
+                    <div id="world-info-local" class="world-info-row">Local Tile: -</div>
+                    <div id="world-info-city" class="world-info-row is-hidden">Name: -</div>
+                </div>
             </div>
             <div class="canvas-panel">
-                <div class="panel-label">LOCAL VIEW</div>
+                <div class="panel-label local-view-label">
+                    <span>LOCAL VIEW</span>
+                    <div class="view-mode-toggle" role="group" aria-label="Local view mode">
+                        <button class="mode-btn active" data-view-mode="god" type="button">God Mode</button>
+                        <button class="mode-btn" data-view-mode="game" type="button">Game Mode</button>
+                    </div>
+                </div>
                 <canvas id="view-canvas"></canvas>
             </div>
             <div class="ornament top-left"></div>
@@ -46,6 +57,7 @@
                 <div id="controls-hint">
                     <div class="hint-item"><span class="key">Click</span> <span class="action">Kill / Disturb (map)</span></div>
                     <div class="hint-item"><span class="key">WASD</span> <span class="action">Move</span></div>
+                    <div class="hint-item"><span class="key">Game Mode</span> <span class="action">Obstacles: Forest, Water, Mountain</span></div>
                     <div class="hint-item"><span class="key">Shift+D</span> <span class="action">Spawn Death Source</span></div>
                     <div class="hint-item"><span class="key">F</span> <span class="action">Toggle Fullscreen</span></div>
                     <div class="hint-item"><span class="key">Space</span> <span class="action">Pause / Resume</span></div>
