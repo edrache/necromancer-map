@@ -24,7 +24,13 @@ const CONFIG = {
     CITY_FOREST_BURN_SUSTAIN: 4,
     CITY_FOREST_BURN_STABILITY_COST: 0.1,
     FOREST_REGROWTH_CHANCE: 0.004,
-    CITY_EROSION_STABILITY_COST: 0.12
+    CITY_EROSION_STABILITY_COST: 0.12,
+    LOCAL_PEOPLE_BASE_VILLAGE: 5,
+    LOCAL_PEOPLE_BASE_CITY: 12,
+    LOCAL_PEOPLE_POP_SCALE_VILLAGE: 0.08,
+    LOCAL_PEOPLE_POP_SCALE_CITY: 0.12,
+    LOCAL_PEOPLE_CITYSIZE_SCALE: 0.18,
+    LOCAL_PEOPLE_MAX: 24
 };
 
 const CELL_TYPES = {
@@ -190,6 +196,11 @@ const LOCAL_VIEW_EMOJI_DENSITY = {
     CITY: 0.9
 };
 
+const LOCAL_PEOPLE_EMOJIS = [
+    '🧑', '👨', '👩', '🧔', '👨‍🌾', '👩‍🌾', '👨‍🏭', '👩‍🏭',
+    '👨‍🔧', '👩‍🔧', '👨‍🎨', '👩‍🎨', '👨‍🍳', '👩‍🍳', '👨‍⚕️', '👩‍⚕️'
+];
+
 const WORLD_TYPE_LABELS = {
     PLAIN: "Plains",
     FOREST: "Forest",
@@ -302,6 +313,7 @@ class Game {
         this.regions = [];
         this.deathSources = [];
         this.localGrids = new Map();
+        this.localPeople = new Map();
         this.isPaused = true;
         this.isDead = false;
         this.deathSeverity = 0;
@@ -326,6 +338,7 @@ class Game {
         };
         this.viewTransition = null;
         this.lastFrameTime = performance.now();
+        this.animationClock = 0;
 
         this.initGrid();
         this.initSliders();
@@ -1226,9 +1239,12 @@ class Game {
             offsetY = dy * (sizePx - shift);
 
             this.drawLocalGrid(this.viewTransition.fromX, this.viewTransition.fromY, -dx * shift, -dy * shift);
+            this.drawLocalPeople(this.viewTransition.fromX, this.viewTransition.fromY, -dx * shift, -dy * shift);
             this.drawLocalGrid(this.viewTransition.toX, this.viewTransition.toY, offsetX, offsetY);
+            this.drawLocalPeople(this.viewTransition.toX, this.viewTransition.toY, offsetX, offsetY);
         } else {
             this.drawLocalGrid(this.player.worldX, this.player.worldY, 0, 0);
+            this.drawLocalPeople(this.player.worldX, this.player.worldY, 0, 0);
         }
 
         const playerPx = (this.player.localX + 0.5) * this.viewCellSize + offsetX;
@@ -1305,6 +1321,205 @@ class Game {
                 this.viewCtx.globalAlpha = 1.0;
             }
         }
+    }
+
+    drawLocalPeople(worldX, worldY, offsetX, offsetY) {
+        const cell = this.grid[worldY]?.[worldX];
+        if (!cell || cell.population <= 0) return;
+        if (cell.type !== 'VILLAGE' && cell.type !== 'CITY') return;
+
+        const count = this.getLocalPeopleCount(cell);
+        if (count <= 0) return;
+
+        const people = this.getLocalPeople(worldX, worldY, count);
+        const fontSize = Math.max(12, this.viewCellSize * 0.7);
+
+        for (let i = 0; i < people.length; i++) {
+            const person = people[i];
+            const bob = Math.sin((this.animationClock * 3) + person.bobPhase) * this.viewCellSize * 0.03;
+            const px = (person.x + 0.5) * this.viewCellSize + offsetX;
+            const py = (person.y + 0.5) * this.viewCellSize + offsetY + bob;
+
+            this.viewCtx.globalAlpha = 0.9;
+            this.viewCtx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+            this.viewCtx.beginPath();
+            this.viewCtx.ellipse(px, py + fontSize * 0.22, fontSize * 0.22, fontSize * 0.11, 0, 0, Math.PI * 2);
+            this.viewCtx.fill();
+
+            this.viewCtx.globalAlpha = 0.95;
+            this.viewCtx.textAlign = 'center';
+            this.viewCtx.textBaseline = 'middle';
+            this.viewCtx.font = `${fontSize}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Cormorant Garamond"`;
+            this.viewCtx.fillText(person.emoji, px, py);
+        }
+
+        this.viewCtx.globalAlpha = 1.0;
+    }
+
+    updateLocalPeople(dt) {
+        if (!this.started) return;
+        const targets = [];
+        if (this.viewTransition && this.viewTransition.active) {
+            targets.push([this.viewTransition.fromX, this.viewTransition.fromY]);
+            targets.push([this.viewTransition.toX, this.viewTransition.toY]);
+        } else {
+            targets.push([this.player.worldX, this.player.worldY]);
+        }
+
+        for (const [worldX, worldY] of targets) {
+            const cell = this.grid[worldY]?.[worldX];
+            if (!cell || cell.population <= 0) continue;
+            if (cell.type !== 'VILLAGE' && cell.type !== 'CITY') continue;
+            const count = this.getLocalPeopleCount(cell);
+            if (count <= 0) continue;
+
+            const people = this.getLocalPeople(worldX, worldY, count);
+            const grid = this.getLocalGrid(worldX, worldY);
+            for (const person of people) {
+                if (person.idle > 0) {
+                    person.idle = Math.max(0, person.idle - dt);
+                    if (person.idle > 0) continue;
+                    const radius = person.type === 'CITY' ? 5.5 : 3.5;
+                    const target = this.findWalkableNearWithRng(worldX, worldY, grid, person.random, person.x, person.y, radius);
+                    if (target) {
+                        person.tx = target.x;
+                        person.ty = target.y;
+                        person.hasTarget = true;
+                    }
+                }
+
+                if (!person.hasTarget) {
+                    const radius = person.type === 'CITY' ? 5.5 : 3.5;
+                    const target = this.findWalkableNearWithRng(worldX, worldY, grid, person.random, person.x, person.y, radius);
+                    if (!target) continue;
+                    person.tx = target.x;
+                    person.ty = target.y;
+                    person.hasTarget = true;
+                }
+
+                const dx = person.tx - person.x;
+                const dy = person.ty - person.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist < 0.05) {
+                    person.x = person.tx;
+                    person.y = person.ty;
+                    person.hasTarget = false;
+                    person.idle = 0.6 + person.random() * 2.2;
+                    continue;
+                }
+
+                const step = person.speed * dt;
+                const move = Math.min(step, dist);
+                const nx = person.x + (dx / dist) * move;
+                const ny = person.y + (dy / dist) * move;
+                const cellX = Math.floor(nx);
+                const cellY = Math.floor(ny);
+                const cellType = grid[cellY]?.[cellX];
+                if (!cellType || this.isBlockedCell(worldX, worldY, cellX, cellY, cellType)) {
+                    person.hasTarget = false;
+                    person.idle = 0.4 + person.random() * 1.8;
+                    continue;
+                }
+
+                person.x = nx;
+                person.y = ny;
+            }
+        }
+    }
+
+    getLocalPeople(worldX, worldY, count) {
+        const key = `${worldX},${worldY}`;
+        const cell = this.grid[worldY]?.[worldX];
+        const type = cell?.type || 'PLAIN';
+        const entry = this.localPeople.get(key);
+        if (entry && entry.type === type && entry.count === count) {
+            return entry.people;
+        }
+
+        const grid = this.getLocalGrid(worldX, worldY);
+        const center = (CONFIG.LOCAL_GRID_SIZE - 1) / 2;
+        const people = [];
+        for (let i = 0; i < count; i++) {
+            const seed = hash01(worldX, worldY, i, 1207) * 1000 + i;
+            const rng = this.buildSeededRng(seed);
+            const start = this.findRandomWalkableLocalCellWithRng(worldX, worldY, grid, rng)
+                || { x: center, y: center };
+            const speed = 0.45 + rng() * 1.05;
+            const emoji = LOCAL_PEOPLE_EMOJIS[Math.floor(rng() * LOCAL_PEOPLE_EMOJIS.length)];
+            people.push({
+                x: start.x,
+                y: start.y,
+                tx: start.x,
+                ty: start.y,
+                hasTarget: false,
+                idle: rng() * 1.6,
+                speed,
+                seed,
+                bobPhase: rng() * Math.PI * 2,
+                random: rng,
+                type,
+                emoji
+            });
+        }
+
+        this.localPeople.set(key, { type, count, people });
+        return people;
+    }
+
+    getLocalPeopleCount(cell) {
+        const base = cell.type === 'CITY'
+            ? CONFIG.LOCAL_PEOPLE_BASE_CITY
+            : CONFIG.LOCAL_PEOPLE_BASE_VILLAGE;
+        const scale = cell.type === 'CITY'
+            ? CONFIG.LOCAL_PEOPLE_POP_SCALE_CITY
+            : CONFIG.LOCAL_PEOPLE_POP_SCALE_VILLAGE;
+        const size = Math.max(1, cell.citySize || 1);
+        const sizeMultiplier = 1 + (size - 1) * CONFIG.LOCAL_PEOPLE_CITYSIZE_SCALE;
+        return Math.min(
+            CONFIG.LOCAL_PEOPLE_MAX,
+            Math.max(0, Math.floor((base + cell.population * scale) * sizeMultiplier))
+        );
+    }
+
+    findWalkableNearWithRng(worldX, worldY, grid, rng, originX, originY, radius) {
+        for (let i = 0; i < 40; i++) {
+            const angle = rng() * Math.PI * 2;
+            const r = Math.sqrt(rng()) * radius;
+            const x = originX + Math.cos(angle) * r;
+            const y = originY + Math.sin(angle) * r;
+            if (x < 0.2 || y < 0.2 || x > CONFIG.LOCAL_GRID_SIZE - 1.2 || y > CONFIG.LOCAL_GRID_SIZE - 1.2) {
+                continue;
+            }
+            const cellX = Math.floor(x);
+            const cellY = Math.floor(y);
+            const type = grid[cellY]?.[cellX];
+            if (!type) continue;
+            if (this.isBlockedCell(worldX, worldY, cellX, cellY, type)) continue;
+            return { x, y };
+        }
+        return null;
+    }
+
+    findRandomWalkableLocalCellWithRng(worldX, worldY, grid, rng) {
+        for (let i = 0; i < 50; i++) {
+            const x = rng() * (CONFIG.LOCAL_GRID_SIZE - 1);
+            const y = rng() * (CONFIG.LOCAL_GRID_SIZE - 1);
+            const cellX = Math.floor(x);
+            const cellY = Math.floor(y);
+            const type = grid[cellY]?.[cellX];
+            if (!type) continue;
+            if (this.isBlockedCell(worldX, worldY, cellX, cellY, type)) continue;
+            return { x, y };
+        }
+        return null;
+    }
+
+    buildSeededRng(seed) {
+        let s = Math.floor(seed) || 1;
+        return () => {
+            s = (s * 1664525 + 1013904223) % 4294967296;
+            return (s >>> 0) / 4294967296;
+        };
     }
 
     getLocalCellEmojiInfo(worldX, worldY, x, y, type) {
@@ -1857,8 +2072,10 @@ class Game {
         const loop = (time) => {
             const dt = Math.min(0.05, (time - this.lastFrameTime) / 1000);
             this.lastFrameTime = time;
+            this.animationClock = (this.animationClock + dt) % 1000;
             this.updatePlayer(dt);
             this.updateViewTransition(dt);
+            this.updateLocalPeople(dt);
             this.render();
             requestAnimationFrame(loop);
         };
@@ -2211,6 +2428,10 @@ class Game {
 
     handleKeyDown(e) {
         const key = e.key.toLowerCase();
+        if (key === 'arrowup') { e.preventDefault(); this.input.up = true; return; }
+        if (key === 'arrowdown') { e.preventDefault(); this.input.down = true; return; }
+        if (key === 'arrowleft') { e.preventDefault(); this.input.left = true; return; }
+        if (key === 'arrowright') { e.preventDefault(); this.input.right = true; return; }
         if (key === 'w') { this.input.up = true; return; }
         if (key === 's') { this.input.down = true; return; }
         if (key === 'a') { this.input.left = true; return; }
@@ -2227,6 +2448,10 @@ class Game {
 
     handleKeyUp(e) {
         const key = e.key.toLowerCase();
+        if (key === 'arrowup') this.input.up = false;
+        if (key === 'arrowdown') this.input.down = false;
+        if (key === 'arrowleft') this.input.left = false;
+        if (key === 'arrowright') this.input.right = false;
         if (key === 'w') this.input.up = false;
         if (key === 's') this.input.down = false;
         if (key === 'a') this.input.left = false;
