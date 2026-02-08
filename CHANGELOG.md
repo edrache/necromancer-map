@@ -7,10 +7,12 @@
 - NPC murder witness behavior: alerts, retaliation logic, and “UWAGA” indicator.
 - NPC panic response: accelerate to allies when attacked, then engage the attacker’s faction.
 - Zombie pursuit across local areas with travel-time delay and follow radius (5 tiles).
+- Year counter displayed at the bottom of the screen (starts at year 1).
 
 ### Changed
 - Zombies no longer leave graves.
 - Collider obstacles are suppressed on local view borders to prevent edge spawns.
+- Each simulation turn now advances the year; TPS indicates years per second.
 
 ### Fixed
 - Zombies are repositioned out of colliders on spawn/transfer and auto‑unstuck if trapped.

@@ -343,6 +343,7 @@ class Game {
         this.restartBtn = document.getElementById('restart-btn');
 
         this.tps = 1;
+        this.year = 1;
         this.started = false;
         this.worldCellSize = CONFIG.CELL_SIZE;
         this.viewCellSize = CONFIG.VIEW_CELL_SIZE;
@@ -373,6 +374,8 @@ class Game {
             this.initGrid(); // Re-initialize with current slider values
             this.spawnPlayer();
             this.player.hp = this.player.maxHp;
+            this.year = 1;
+            this.updateYearDisplay();
             this.started = true;
             this.start();
             document.getElementById('start-screen').classList.add('hidden');
@@ -393,6 +396,7 @@ class Game {
 
         this.render();
         this.startAnimationLoop();
+        this.updateYearDisplay();
     }
 
     initTimeControls() {
@@ -637,6 +641,15 @@ class Game {
         this.updateCityNamesOnSplit();
         this.detectRegions();
         this.checkRepression();
+        this.year += 1;
+        this.updateYearDisplay();
+    }
+
+    updateYearDisplay() {
+        const yearDisplay = document.getElementById('year-display');
+        if (yearDisplay) {
+            yearDisplay.textContent = `Rok ${this.year}`;
+        }
     }
 
     updateDeathSources() {
@@ -2978,6 +2991,8 @@ class Game {
         this.isPaused = false;
         this.deathSeverity = 0;
         this.deathTurnsRemaining = 0;
+        this.year = 1;
+        this.updateYearDisplay();
         this.input = { up: false, down: false, left: false, right: false };
         this.hoveredNpc = null;
         this.hoveredGrave = null;

@@ -67,7 +67,7 @@ Each turn runs in this order:
 - Space: pause / resume
 - Buttons I/II/V/X or keys 1–4: speed presets (1, 2, 5, 10 TPS)
 - TPS slider: fine speed control (1–20 TPS)
-Note: Pause stops world evolution (cities/forests/etc.), but local actions (player, NPCs, zombies) still run.
+Note: 1 TPS = 1 year per second, and each simulation turn advances the world by one year. Pause stops world evolution (cities/forests/etc.), but local actions (player, NPCs, zombies) still run.
 
 ## UI Notes
 - World map shows terrain types and stability via brightness/saturation.
@@ -77,6 +77,7 @@ Note: Pause stops world evolution (cities/forests/etc.), but local actions (play
 - If the current world cell is a village or city, its name is shown under the world map.
 - HP bars appear above player/NPCs when damaged and hide at full health.
 - Game Over screen appears on player death with a restart option.
+- The current year is displayed at the bottom of the screen (starts at year 1).
 
 ## Visual Reference
 `visual-reference.html` lists:
