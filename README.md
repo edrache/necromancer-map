@@ -7,7 +7,7 @@ A dark, minimalist ecosystem simulation on a 20x20 grid where you play a necroma
 - Sustain resource simulation with production, diffusion, and consumption.
 - Stability drives expansion, regression, and visual feedback.
 - Villages and cities form named agglomerations with shared identity.
-- Necromancer actions: direct killing and short‑lived Death Sources.
+- Necromancer actions: direct killing, raising zombies, and short‑lived Death Sources.
 - Time controls: pause, speed presets, and TPS slider.
 
 ## Story and Goal
@@ -52,6 +52,10 @@ Each turn runs in this order:
 ## Necromancer Actions
 - Click on the world map: instantly kills population and drops stability on the selected cell.
 - Shift + D: spawn a Death Source that drains nearby stability and kills a portion of population for a few turns.
+- Game Mode (local view):
+  - Hover an NPC in range to get a sword cursor, then click to kill (creates a grave).
+  - Hover a grave in range to get a dark‑magic cursor, then click to raise a zombie.
+  - Zombies move slower than the player, avoid obstacles, and attack nearby NPCs.
 
 ## Controls
 - Click (world map): kill / disturb
@@ -61,6 +65,7 @@ Each turn runs in this order:
 - Space: pause / resume
 - Buttons I/II/V/X or keys 1–4: speed presets (1, 2, 5, 10 TPS)
 - TPS slider: fine speed control (1–20 TPS)
+Note: Pause stops world evolution (cities/forests/etc.), but local actions (player, NPCs, zombies) still run.
 
 ## UI Notes
 - World map shows terrain types and stability via brightness/saturation.

@@ -30,7 +30,16 @@ const CONFIG = {
     LOCAL_PEOPLE_POP_SCALE_VILLAGE: 0.08,
     LOCAL_PEOPLE_POP_SCALE_CITY: 0.12,
     LOCAL_PEOPLE_CITYSIZE_SCALE: 0.18,
-    LOCAL_PEOPLE_MAX: 24
+    LOCAL_PEOPLE_MAX: 24,
+    NPC_INTERACT_RANGE: 1.6, // local cell distance from player
+    NPC_HOVER_RADIUS: 0.85, // local cell distance from cursor
+    ZOMBIE_SPEED_MIN: 0.85, // local cells per second
+    ZOMBIE_SPEED_MAX: 1.6, // local cells per second
+    ZOMBIE_ATTACK_RADIUS: 0.7, // local cell distance
+    ZOMBIE_SIGHT_RADIUS: 3.2,
+    ZOMBIE_ALERT_DURATION: 0.8,
+    ZOMBIE_COLLIDER_RADIUS: 0.28,
+    ZOMBIE_AVOID_PLAYER_RADIUS: 0.75
 };
 
 const CELL_TYPES = {
@@ -321,6 +330,8 @@ class Game {
         this.mouseX = 0;
         this.mouseY = 0;
         this.hoveredGroup = null; // Set of cells in currently hovered city group
+        this.hoveredNpc = null;
+        this.hoveredGrave = null;
         this.tooltip = document.getElementById('city-tooltip');
 
         this.tps = 1;
@@ -359,6 +370,9 @@ class Game {
         // Interactions
         this.worldCanvas.addEventListener('mousedown', (e) => this.handleClick(e));
         this.worldCanvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        this.viewCanvas.addEventListener('mousemove', (e) => this.handleViewMouseMove(e));
+        this.viewCanvas.addEventListener('mouseleave', () => this.clearNpcHover());
+        this.viewCanvas.addEventListener('mousedown', (e) => this.handleViewClick(e));
         window.addEventListener('keydown', (e) => this.handleKeyDown(e));
         window.addEventListener('keyup', (e) => this.handleKeyUp(e));
 
@@ -413,6 +427,7 @@ class Game {
         if (this.viewMode === mode) return;
         this.viewMode = mode;
         this.syncViewModeUi();
+        this.clearNpcHover();
         if (this.viewMode === 'game') {
             this.ensurePlayerPassable();
         }
@@ -593,6 +608,9 @@ class Game {
     }
 
     step() {
+        if (this.viewMode === 'game') {
+            return;
+        }
         this.cityErosionThisTurn = new Set();
         this.updateDeathSources();
         this.produceSustain();
@@ -604,7 +622,6 @@ class Game {
         this.updateCityNamesOnSplit();
         this.detectRegions();
         this.checkRepression();
-        this.updateUI();
     }
 
     updateDeathSources() {
@@ -1121,6 +1138,7 @@ class Game {
         this.renderWorld();
         this.renderView();
         this.updateWorldInfo();
+        this.updateUI();
     }
 
     renderWorld() {
@@ -1251,13 +1269,29 @@ class Game {
         const playerPy = (this.player.localY + 0.5) * this.viewCellSize + offsetY;
         const radius = Math.max(6, this.viewCellSize * 0.28);
 
-        this.viewCtx.fillStyle = '#f8fafc';
-        this.viewCtx.beginPath();
-        this.viewCtx.arc(playerPx, playerPy, radius, 0, Math.PI * 2);
-        this.viewCtx.fill();
-        this.viewCtx.strokeStyle = '#22c55e';
-        this.viewCtx.lineWidth = 2;
-        this.viewCtx.stroke();
+        if (this.viewMode === 'game') {
+            const fontSize = Math.max(14, this.viewCellSize * 0.75);
+            this.viewCtx.save();
+            this.viewCtx.globalAlpha = 1.0;
+            this.viewCtx.textAlign = 'center';
+            this.viewCtx.textBaseline = 'middle';
+            this.viewCtx.font = `${fontSize}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Cormorant Garamond"`;
+            this.viewCtx.lineWidth = Math.max(2, fontSize * 0.12);
+            this.viewCtx.strokeStyle = 'rgba(8, 10, 20, 0.95)';
+            this.viewCtx.strokeText('🧙‍♂️', playerPx, playerPy);
+            this.viewCtx.shadowColor = 'rgba(34, 197, 94, 0.7)';
+            this.viewCtx.shadowBlur = Math.max(3, fontSize * 0.25);
+            this.viewCtx.fillText('🧙‍♂️', playerPx, playerPy);
+            this.viewCtx.restore();
+        } else {
+            this.viewCtx.fillStyle = '#f8fafc';
+            this.viewCtx.beginPath();
+            this.viewCtx.arc(playerPx, playerPy, radius, 0, Math.PI * 2);
+            this.viewCtx.fill();
+            this.viewCtx.strokeStyle = '#22c55e';
+            this.viewCtx.lineWidth = 2;
+            this.viewCtx.stroke();
+        }
     }
 
     drawLocalGrid(worldX, worldY, offsetX, offsetY) {
@@ -1336,21 +1370,40 @@ class Game {
 
         for (let i = 0; i < people.length; i++) {
             const person = people[i];
-            const bob = Math.sin((this.animationClock * 3) + person.bobPhase) * this.viewCellSize * 0.03;
+            const bob = (person.isDead || person.isZombie)
+                ? 0
+                : Math.sin((this.animationClock * 3) + person.bobPhase) * this.viewCellSize * 0.03;
             const px = (person.x + 0.5) * this.viewCellSize + offsetX;
             const py = (person.y + 0.5) * this.viewCellSize + offsetY + bob;
 
-            this.viewCtx.globalAlpha = 0.9;
+            this.viewCtx.globalAlpha = 1.0;
             this.viewCtx.fillStyle = 'rgba(15, 23, 42, 0.45)';
             this.viewCtx.beginPath();
             this.viewCtx.ellipse(px, py + fontSize * 0.22, fontSize * 0.22, fontSize * 0.11, 0, 0, Math.PI * 2);
             this.viewCtx.fill();
 
-            this.viewCtx.globalAlpha = 0.95;
+            this.viewCtx.globalAlpha = 1.0;
             this.viewCtx.textAlign = 'center';
             this.viewCtx.textBaseline = 'middle';
             this.viewCtx.font = `${fontSize}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Cormorant Garamond"`;
-            this.viewCtx.fillText(person.emoji, px, py);
+            const glyph = person.isDead
+                ? (person.graveEmoji || '🪦')
+                : (person.isZombie ? '🧟' : person.emoji);
+            this.viewCtx.save();
+            this.viewCtx.lineWidth = Math.max(2, fontSize * 0.12);
+            this.viewCtx.strokeStyle = 'rgba(8, 10, 20, 0.9)';
+            this.viewCtx.strokeText(glyph, px, py);
+            this.viewCtx.shadowColor = 'rgba(248, 250, 252, 0.35)';
+            this.viewCtx.shadowBlur = Math.max(2, fontSize * 0.18);
+            this.viewCtx.fillText(glyph, px, py);
+            this.viewCtx.restore();
+
+            if (person.isZombie && person.alertTimer > 0) {
+                this.viewCtx.globalAlpha = 1.0;
+                this.viewCtx.fillStyle = '#ef4444';
+                this.viewCtx.font = `${fontSize * 0.7}px "Cormorant Garamond","Outfit","Segoe UI Emoji","Apple Color Emoji"`;
+                this.viewCtx.fillText('❗', px, py - fontSize * 0.55);
+            }
         }
 
         this.viewCtx.globalAlpha = 1.0;
@@ -1376,6 +1429,7 @@ class Game {
             const people = this.getLocalPeople(worldX, worldY, count);
             const grid = this.getLocalGrid(worldX, worldY);
             for (const person of people) {
+                if (person.isDead || person.isZombie) continue;
                 if (person.idle > 0) {
                     person.idle = Math.max(0, person.idle - dt);
                     if (person.idle > 0) continue;
@@ -1455,10 +1509,16 @@ class Game {
                 idle: rng() * 1.6,
                 speed,
                 seed,
+                id: seed,
                 bobPhase: rng() * Math.PI * 2,
                 random: rng,
                 type,
-                emoji
+                emoji,
+                isDead: false,
+                graveEmoji: rng() < 0.5 ? '🪦' : '⚰️',
+                isZombie: false,
+                alertTimer: 0,
+                targetId: null
             });
         }
 
@@ -2076,6 +2136,7 @@ class Game {
             this.updatePlayer(dt);
             this.updateViewTransition(dt);
             this.updateLocalPeople(dt);
+            this.updateZombies(dt);
             this.render();
             requestAnimationFrame(loop);
         };
@@ -2286,6 +2347,25 @@ class Game {
         return false;
     }
 
+    isPositionBlockedWithRadius(worldX, worldY, centerX, centerY, radius) {
+        const grid = this.getLocalGrid(worldX, worldY);
+        const x0 = Math.max(0, Math.floor(centerX - radius));
+        const y0 = Math.max(0, Math.floor(centerY - radius));
+        const x1 = Math.min(CONFIG.LOCAL_GRID_SIZE - 1, Math.floor(centerX + radius));
+        const y1 = Math.min(CONFIG.LOCAL_GRID_SIZE - 1, Math.floor(centerY + radius));
+
+        for (let y = y0; y <= y1; y++) {
+            for (let x = x0; x <= x1; x++) {
+                const type = grid[y][x];
+                if (this.isBlockedCell(worldX, worldY, x, y, type)
+                    && this.circleIntersectsCell(centerX, centerY, radius, x, y)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     circleIntersectsCell(cx, cy, r, cellX, cellY) {
         const closestX = Math.max(cellX, Math.min(cx, cellX + 1));
         const closestY = Math.max(cellY, Math.min(cy, cellY + 1));
@@ -2392,6 +2472,273 @@ class Game {
             this.tooltip.classList.add('hidden');
             this.hoveredGroup = null;
         }
+    }
+
+    handleViewMouseMove(e) {
+        if (!this.started || this.viewMode !== 'game') {
+            this.clearNpcHover();
+            return;
+        }
+        if (this.viewTransition && this.viewTransition.active) {
+            this.clearNpcHover();
+            return;
+        }
+
+        const rect = this.viewCanvas.getBoundingClientRect();
+        const localX = (e.clientX - rect.left) / this.viewCellSize;
+        const localY = (e.clientY - rect.top) / this.viewCellSize;
+
+        const cell = this.grid[this.player.worldY]?.[this.player.worldX];
+        if (!cell || cell.population <= 0 || (cell.type !== 'VILLAGE' && cell.type !== 'CITY')) {
+            this.clearNpcHover();
+            return;
+        }
+
+        const count = this.getLocalPeopleCount(cell);
+        if (count <= 0) {
+            this.clearNpcHover();
+            return;
+        }
+
+        const people = this.getLocalPeople(this.player.worldX, this.player.worldY, count);
+        let closestAlive = null;
+        let closestAliveDist = CONFIG.NPC_HOVER_RADIUS;
+        let closestGrave = null;
+        let closestGraveDist = CONFIG.NPC_HOVER_RADIUS;
+
+        for (const person of people) {
+            const dx = person.x + 0.5 - localX;
+            const dy = person.y + 0.5 - localY;
+            const dist = Math.hypot(dx, dy);
+            if (person.isDead) {
+                if (dist <= closestGraveDist) {
+                    closestGrave = person;
+                    closestGraveDist = dist;
+                }
+                continue;
+            }
+            if (person.isZombie) continue;
+            if (dist <= closestAliveDist) {
+                closestAlive = person;
+                closestAliveDist = dist;
+            }
+        }
+
+        const canInteractAlive = closestAlive
+            && Math.hypot(this.player.localX - closestAlive.x, this.player.localY - closestAlive.y) <= CONFIG.NPC_INTERACT_RANGE;
+        const canInteractGrave = closestGrave
+            && Math.hypot(this.player.localX - closestGrave.x, this.player.localY - closestGrave.y) <= CONFIG.NPC_INTERACT_RANGE;
+
+        if (!canInteractAlive && !canInteractGrave) {
+            this.clearNpcHover();
+            return;
+        }
+
+        const aliveIsCloser = canInteractAlive
+            && (!canInteractGrave || closestAliveDist <= closestGraveDist);
+
+        if (aliveIsCloser) {
+            this.hoveredNpc = { worldX: this.player.worldX, worldY: this.player.worldY, person: closestAlive };
+            this.hoveredGrave = null;
+            this.viewCanvas.classList.add('cursor-sword');
+            this.viewCanvas.classList.remove('cursor-curse');
+            return;
+        }
+
+        if (canInteractGrave) {
+            this.hoveredGrave = { worldX: this.player.worldX, worldY: this.player.worldY, person: closestGrave };
+            this.hoveredNpc = null;
+            this.viewCanvas.classList.add('cursor-curse');
+            this.viewCanvas.classList.remove('cursor-sword');
+            return;
+        }
+
+        this.clearNpcHover();
+    }
+
+    handleViewClick(e) {
+        if (!this.started) return;
+        if (this.viewMode !== 'game') return;
+        if (this.hoveredGrave?.person) {
+            this.raiseZombie(this.hoveredGrave.person);
+            this.hoveredGrave = null;
+            return;
+        }
+        if (!this.hoveredNpc) return;
+        const { worldX, worldY, person } = this.hoveredNpc;
+        if (!person || person.isDead) return;
+
+        const distToPlayer = Math.hypot(this.player.localX - person.x, this.player.localY - person.y);
+        if (distToPlayer > CONFIG.NPC_INTERACT_RANGE) return;
+
+        person.isDead = true;
+        person.hasTarget = false;
+        person.idle = 999;
+        person.speed = 0;
+
+        this.deathSeverity += 1;
+        this.clearNpcHover();
+    }
+
+    clearNpcHover() {
+        this.hoveredNpc = null;
+        this.hoveredGrave = null;
+        this.viewCanvas.classList.remove('cursor-sword');
+        this.viewCanvas.classList.remove('cursor-curse');
+    }
+
+    raiseZombie(person) {
+        if (!person || !person.isDead || person.isZombie) return;
+        person.isDead = false;
+        person.isZombie = true;
+        person.emoji = '🧟';
+        person.hasTarget = false;
+        person.idle = 0;
+        person.speed = this.randomBetween(CONFIG.ZOMBIE_SPEED_MIN, CONFIG.ZOMBIE_SPEED_MAX);
+        person.alertTimer = CONFIG.ZOMBIE_ALERT_DURATION;
+        person.targetId = null;
+    }
+
+    updateZombies(dt) {
+        if (!this.started) return;
+        if (this.viewMode !== 'game') return;
+        if (this.viewTransition && this.viewTransition.active) return;
+
+        const cell = this.grid[this.player.worldY]?.[this.player.worldX];
+        if (!cell || cell.population <= 0 || (cell.type !== 'VILLAGE' && cell.type !== 'CITY')) return;
+
+        const count = this.getLocalPeopleCount(cell);
+        if (count <= 0) return;
+
+        const grid = this.getLocalGrid(this.player.worldX, this.player.worldY);
+        const people = this.getLocalPeople(this.player.worldX, this.player.worldY, count);
+
+        for (const zombie of people) {
+            if (!zombie.isZombie) continue;
+            zombie.alertTimer = Math.max(0, zombie.alertTimer - dt);
+
+            let target = null;
+            let targetDist = CONFIG.ZOMBIE_SIGHT_RADIUS;
+            for (const person of people) {
+                if (person.isDead || person.isZombie) continue;
+                const pdx = person.x - zombie.x;
+                const pdy = person.y - zombie.y;
+                const d = Math.hypot(pdx, pdy);
+                if (d > targetDist) continue;
+                if (!this.hasLineOfSight(this.player.worldX, this.player.worldY, grid, zombie.x, zombie.y, person.x, person.y)) {
+                    continue;
+                }
+                target = person;
+                targetDist = d;
+            }
+
+            if (target && zombie.targetId !== target.id) {
+                zombie.alertTimer = CONFIG.ZOMBIE_ALERT_DURATION;
+                zombie.targetId = target.id;
+            }
+
+            const baseFollowX = target ? target.x : this.player.localX;
+            const baseFollowY = target ? target.y : this.player.localY;
+            const noiseAngle = (this.animationClock * 1.4) + (zombie.seed * 0.01);
+            const noiseRadius = 0.22;
+            const followX = baseFollowX + Math.cos(noiseAngle) * noiseRadius;
+            const followY = baseFollowY + Math.sin(noiseAngle) * noiseRadius;
+            const dx = followX - zombie.x;
+            const dy = followY - zombie.y;
+            const dist = Math.hypot(dx, dy) || 1;
+            const step = zombie.speed * dt;
+            const move = Math.min(step, dist);
+            const nx = zombie.x + (dx / dist) * move;
+            const ny = zombie.y + (dy / dist) * move;
+
+            let moved = false;
+            if (!this.isPositionBlockedWithRadius(this.player.worldX, this.player.worldY, nx + 0.5, ny + 0.5, CONFIG.ZOMBIE_COLLIDER_RADIUS)) {
+                zombie.x = nx;
+                zombie.y = ny;
+                moved = true;
+            }
+
+            if (!moved) {
+                const tryX = zombie.x + Math.sign(dx) * move;
+                const tryY = zombie.y + Math.sign(dy) * move;
+                if (!this.isPositionBlockedWithRadius(this.player.worldX, this.player.worldY, tryX + 0.5, zombie.y + 0.5, CONFIG.ZOMBIE_COLLIDER_RADIUS)) {
+                    zombie.x = tryX;
+                } else {
+                    if (!this.isPositionBlockedWithRadius(this.player.worldX, this.player.worldY, zombie.x + 0.5, tryY + 0.5, CONFIG.ZOMBIE_COLLIDER_RADIUS)) {
+                        zombie.y = tryY;
+                    }
+                }
+            }
+
+            // Gentle separation to avoid stacking
+            let pushX = 0;
+            let pushY = 0;
+            for (const other of people) {
+                if (!other.isZombie || other === zombie) continue;
+                const ox = zombie.x - other.x;
+                const oy = zombie.y - other.y;
+                const d = Math.hypot(ox, oy);
+                if (d > 0 && d < 0.6) {
+                    const force = (0.6 - d) * 0.12;
+                    pushX += (ox / d) * force;
+                    pushY += (oy / d) * force;
+                }
+            }
+
+            // Avoid the player collider
+            const pdx = zombie.x - this.player.localX;
+            const pdy = zombie.y - this.player.localY;
+            const pd = Math.hypot(pdx, pdy);
+            if (pd > 0 && pd < CONFIG.ZOMBIE_AVOID_PLAYER_RADIUS) {
+                const force = (CONFIG.ZOMBIE_AVOID_PLAYER_RADIUS - pd) * 0.18;
+                pushX += (pdx / pd) * force;
+                pushY += (pdy / pd) * force;
+            }
+
+            if (pushX !== 0 || pushY !== 0) {
+                const px = zombie.x + pushX;
+                const py = zombie.y + pushY;
+                if (!this.isPositionBlockedWithRadius(this.player.worldX, this.player.worldY, px + 0.5, py + 0.5, CONFIG.ZOMBIE_COLLIDER_RADIUS)) {
+                    zombie.x = px;
+                    zombie.y = py;
+                }
+            }
+
+            if (target && targetDist <= CONFIG.ZOMBIE_ATTACK_RADIUS) {
+                target.isDead = true;
+                target.isZombie = false;
+                target.hasTarget = false;
+                target.idle = 999;
+                target.speed = 0;
+                if (this.hoveredNpc?.person === target) {
+                    this.clearNpcHover();
+                }
+            }
+        }
+    }
+
+    hasLineOfSight(worldX, worldY, grid, x0, y0, x1, y1) {
+        const dx = x1 - x0;
+        const dy = y1 - y0;
+        const dist = Math.hypot(dx, dy) || 1;
+        const steps = Math.max(6, Math.ceil(dist * 4));
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            const x = x0 + dx * t;
+            const y = y0 + dy * t;
+            const cellX = Math.floor(x);
+            const cellY = Math.floor(y);
+            const type = grid[cellY]?.[cellX];
+            if (!type) continue;
+            if (this.isBlockedCell(worldX, worldY, cellX, cellY, type)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    randomBetween(min, max) {
+        return min + Math.random() * (max - min);
     }
 
     getCityGroup(startCell) {
