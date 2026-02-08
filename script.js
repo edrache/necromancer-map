@@ -283,6 +283,7 @@ class Game {
         this.initGrid();
         this.initSliders();
         this.initTimeControls();
+        this.initUiToggle();
         this.resize();
         window.addEventListener('resize', () => this.resize());
 
@@ -320,6 +321,20 @@ class Game {
             btn.addEventListener('click', () => {
                 this.setSpeed(parseInt(btn.dataset.speed));
             });
+        });
+    }
+
+    initUiToggle() {
+        const uiOverlay = document.getElementById('ui-overlay');
+        const toggleBtn = document.getElementById('ui-toggle');
+
+        if (!uiOverlay || !toggleBtn) return;
+
+        toggleBtn.addEventListener('click', () => {
+            const isCollapsed = uiOverlay.classList.toggle('collapsed');
+            toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
+            toggleBtn.textContent = isCollapsed ? '▾' : '▴';
+            this.resize();
         });
     }
 
@@ -452,20 +467,23 @@ class Game {
     }
 
     resize() {
-        const maxPanelWidth = Math.min(window.innerWidth * 0.42, 540);
-        const maxPanelHeight = window.innerHeight * 0.8;
-        const worldCellSize = Math.floor(Math.min(
-            maxPanelWidth / CONFIG.GRID_SIZE,
-            maxPanelHeight / CONFIG.GRID_SIZE,
-            CONFIG.CELL_SIZE
-        ));
+        const isStacked = window.innerWidth <= 1200;
+        const maxPanelWidth = Math.min(window.innerWidth * (isStacked ? 0.92 : 0.42), 600);
+        const maxPanelHeight = window.innerHeight * (isStacked ? 0.55 : 0.8);
         const viewCellSize = Math.floor(Math.min(
             maxPanelWidth / CONFIG.LOCAL_GRID_SIZE,
             maxPanelHeight / CONFIG.LOCAL_GRID_SIZE,
             CONFIG.VIEW_CELL_SIZE
         ));
+        const worldMaxWidth = maxPanelWidth * 0.5;
+        const worldMaxHeight = maxPanelHeight * 0.5;
+        const worldCellSize = Math.floor(Math.min(
+            worldMaxWidth / CONFIG.GRID_SIZE,
+            worldMaxHeight / CONFIG.GRID_SIZE,
+            CONFIG.CELL_SIZE * 0.5
+        ));
 
-        this.worldCellSize = Math.max(10, worldCellSize);
+        this.worldCellSize = Math.max(6, worldCellSize);
         this.viewCellSize = Math.max(10, viewCellSize);
 
         this.worldCanvas.width = CONFIG.GRID_SIZE * this.worldCellSize;
