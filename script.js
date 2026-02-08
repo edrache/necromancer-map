@@ -10,21 +10,21 @@ const CONFIG = {
     PLAYER_SPEED: 4.5, // cells per second in local view
     VIEW_TRANSITION_DURATION: 0.22, // seconds
     TURN_DURATION: 1000, // ms between automatic turns
-    DIFFUSION_RATE: 0.3,
-    CONSUMPTION_RATE: 0.5,
+    DIFFUSION_RATE: 0.22,
+    CONSUMPTION_RATE: 0.6,
     EXPANSION_THRESHOLD: 0.1,
     REGRESSION_THRESHOLD: 0.3, // Added for new rules
-    STABILITY_DECAY: 0.05,
-    STABILITY_REGEN: 0.02,
+    STABILITY_DECAY: 0.08,
+    STABILITY_REGEN: 0.01,
     DEATH_SEVERITY_THRESHOLD: 100,
     MAX_CITY_SIZE: 25,
     CITY_SIZE_DEMAND_SCALE: 0.04,
-    CITY_EXPANSION_CHANCE: 0.05,
-    FOREST_EXPANSION_CHANCE: 0.02,
-    CITY_FOREST_BURN_SUSTAIN: 3,
-    CITY_FOREST_BURN_STABILITY_COST: 0.06,
-    FOREST_REGROWTH_CHANCE: 0.008,
-    CITY_EROSION_STABILITY_COST: 0.08
+    CITY_EXPANSION_CHANCE: 0.08,
+    FOREST_EXPANSION_CHANCE: 0.015,
+    CITY_FOREST_BURN_SUSTAIN: 4,
+    CITY_FOREST_BURN_STABILITY_COST: 0.1,
+    FOREST_REGROWTH_CHANCE: 0.004,
+    CITY_EROSION_STABILITY_COST: 0.12
 };
 
 const CELL_TYPES = {
@@ -1256,6 +1256,14 @@ class Game {
             const edgeMountain = this.getWorldEdgeMountain(worldX, worldY);
             return this.generateLocalMountainGrid(worldX, worldY, edgeMountain);
         }
+        if (baseType === 'FOREST') {
+            const edgeForest = this.getWorldEdgeType(worldX, worldY, 'FOREST');
+            return this.generateLocalForestGrid(worldX, worldY, edgeForest);
+        }
+        if (baseType === 'CITY') {
+            const edgeCity = this.getWorldEdgeType(worldX, worldY, 'CITY');
+            return this.generateLocalCityGrid(worldX, worldY, edgeCity);
+        }
         const weights = this.buildLocalWeights(baseType, neighborTypes);
         const grid = [];
         for (let y = 0; y < CONFIG.LOCAL_GRID_SIZE; y++) {
@@ -1479,6 +1487,199 @@ class Game {
         return grid;
     }
 
+    generateLocalForestGrid(worldX, worldY, edgeForest) {
+        const size = CONFIG.LOCAL_GRID_SIZE;
+        const center = (size - 1) / 2;
+        const maxDist = Math.hypot(center, center) || 1;
+        const forest = Array.from({ length: size }, () => Array(size).fill(false));
+
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const dist = Math.hypot(x - center, y - center) / maxDist;
+                const threshold = 0.62 - dist * 0.18;
+                const noise = hash01(worldX, worldY, x, y, 521);
+                forest[y][x] = noise < threshold;
+            }
+        }
+
+        const applyEdgeConstraints = () => {
+            const buffer = 1;
+            if (!edgeForest.top) {
+                for (let y = 0; y <= buffer; y++) {
+                    for (let x = 0; x < size; x++) forest[y][x] = false;
+                }
+            } else {
+                for (let x = 0; x < size; x++) forest[0][x] = true;
+            }
+            if (!edgeForest.bottom) {
+                for (let y = size - 1 - buffer; y < size; y++) {
+                    for (let x = 0; x < size; x++) forest[y][x] = false;
+                }
+            } else {
+                for (let x = 0; x < size; x++) forest[size - 1][x] = true;
+            }
+            if (!edgeForest.left) {
+                for (let x = 0; x <= buffer; x++) {
+                    for (let y = 0; y < size; y++) forest[y][x] = false;
+                }
+            } else {
+                for (let y = 0; y < size; y++) forest[y][0] = true;
+            }
+            if (!edgeForest.right) {
+                for (let x = size - 1 - buffer; x < size; x++) {
+                    for (let y = 0; y < size; y++) forest[y][x] = false;
+                }
+            } else {
+                for (let y = 0; y < size; y++) forest[y][size - 1] = true;
+            }
+        };
+
+        applyEdgeConstraints();
+
+        const countForestNeighbors = (x, y) => {
+            let count = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+                    if (forest[ny][nx]) count++;
+                }
+            }
+            return count;
+        };
+
+        for (let i = 0; i < 3; i++) {
+            const next = Array.from({ length: size }, () => Array(size).fill(false));
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const neighbors = countForestNeighbors(x, y);
+                    if (forest[y][x]) {
+                        next[y][x] = neighbors >= 3;
+                    } else {
+                        next[y][x] = neighbors >= 4;
+                    }
+                }
+            }
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) forest[y][x] = next[y][x];
+            }
+            applyEdgeConstraints();
+        }
+
+        const grid = [];
+        for (let y = 0; y < size; y++) {
+            grid[y] = [];
+            for (let x = 0; x < size; x++) {
+                if (forest[y][x]) {
+                    grid[y][x] = 'FOREST';
+                } else {
+                    const landNoise = hash01(worldX, worldY, x, y, 563);
+                    grid[y][x] = landNoise < 0.75 ? 'PLAIN' : 'FOREST';
+                }
+            }
+        }
+        return grid;
+    }
+
+    generateLocalCityGrid(worldX, worldY, edgeCity) {
+        const size = CONFIG.LOCAL_GRID_SIZE;
+        const center = (size - 1) / 2;
+        const maxDist = Math.hypot(center, center) || 1;
+        const urban = Array.from({ length: size }, () => Array(size).fill(false));
+
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const dist = Math.hypot(x - center, y - center) / maxDist;
+                const threshold = 0.58 - dist * 0.22;
+                const noise = hash01(worldX, worldY, x, y, 601);
+                urban[y][x] = noise < threshold;
+            }
+        }
+
+        const applyEdgeConstraints = () => {
+            const buffer = 1;
+            if (!edgeCity.top) {
+                for (let y = 0; y <= buffer; y++) {
+                    for (let x = 0; x < size; x++) urban[y][x] = false;
+                }
+            } else {
+                for (let x = 0; x < size; x++) urban[0][x] = true;
+            }
+            if (!edgeCity.bottom) {
+                for (let y = size - 1 - buffer; y < size; y++) {
+                    for (let x = 0; x < size; x++) urban[y][x] = false;
+                }
+            } else {
+                for (let x = 0; x < size; x++) urban[size - 1][x] = true;
+            }
+            if (!edgeCity.left) {
+                for (let x = 0; x <= buffer; x++) {
+                    for (let y = 0; y < size; y++) urban[y][x] = false;
+                }
+            } else {
+                for (let y = 0; y < size; y++) urban[y][0] = true;
+            }
+            if (!edgeCity.right) {
+                for (let x = size - 1 - buffer; x < size; x++) {
+                    for (let y = 0; y < size; y++) urban[y][x] = false;
+                }
+            } else {
+                for (let y = 0; y < size; y++) urban[y][size - 1] = true;
+            }
+        };
+
+        applyEdgeConstraints();
+
+        const countUrbanNeighbors = (x, y) => {
+            let count = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+                    if (urban[ny][nx]) count++;
+                }
+            }
+            return count;
+        };
+
+        for (let i = 0; i < 2; i++) {
+            const next = Array.from({ length: size }, () => Array(size).fill(false));
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const neighbors = countUrbanNeighbors(x, y);
+                    if (urban[y][x]) {
+                        next[y][x] = neighbors >= 3;
+                    } else {
+                        next[y][x] = neighbors >= 5;
+                    }
+                }
+            }
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) urban[y][x] = next[y][x];
+            }
+            applyEdgeConstraints();
+        }
+
+        const grid = [];
+        for (let y = 0; y < size; y++) {
+            grid[y] = [];
+            for (let x = 0; x < size; x++) {
+                if (urban[y][x]) {
+                    const streetNoise = hash01(worldX, worldY, x, y, 647);
+                    grid[y][x] = streetNoise < 0.15 ? 'PLAIN' : 'CITY';
+                } else {
+                    const outerNoise = hash01(worldX, worldY, x, y, 677);
+                    grid[y][x] = outerNoise < 0.7 ? 'PLAIN' : 'FOREST';
+                }
+            }
+        }
+        return grid;
+    }
+
     buildLocalWeights(baseType, neighborTypes) {
         const base = LOCAL_BASE_WEIGHTS[baseType] || LOCAL_BASE_WEIGHTS.PLAIN;
         const adjusted = { ...base };
@@ -1517,6 +1718,15 @@ class Game {
             bottom: worldY < CONFIG.GRID_SIZE - 1 && this.grid[worldY + 1][worldX].type === 'MOUNTAIN',
             left: worldX > 0 && this.grid[worldY][worldX - 1].type === 'MOUNTAIN',
             right: worldX < CONFIG.GRID_SIZE - 1 && this.grid[worldY][worldX + 1].type === 'MOUNTAIN'
+        };
+    }
+
+    getWorldEdgeType(worldX, worldY, type) {
+        return {
+            top: worldY > 0 && this.grid[worldY - 1][worldX].type === type,
+            bottom: worldY < CONFIG.GRID_SIZE - 1 && this.grid[worldY + 1][worldX].type === type,
+            left: worldX > 0 && this.grid[worldY][worldX - 1].type === type,
+            right: worldX < CONFIG.GRID_SIZE - 1 && this.grid[worldY][worldX + 1].type === type
         };
     }
 
