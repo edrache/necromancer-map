@@ -8,6 +8,7 @@ A dark, minimalist ecosystem simulation on a 20x20 grid where you play a necroma
 - Stability drives expansion, regression, and visual feedback.
 - Villages and cities form named agglomerations with shared identity.
 - Necromancer actions: direct killing, raising zombies, and short‑lived Death Sources.
+- Reactive NPCs with HP, panic behavior, and combat response.
 - Time controls: pause, speed presets, and TPS slider.
 
 ## Story and Goal
@@ -56,6 +57,7 @@ Each turn runs in this order:
   - Hover an NPC in range to get a sword cursor, then click to kill (creates a grave).
   - Hover a grave in range to get a dark‑magic cursor, then click to raise a zombie.
   - Zombies move slower than the player, avoid obstacles, and attack nearby NPCs.
+  - NPCs can witness murders and retaliate; “UWAGA” appears above alerted NPCs.
 
 ## Controls
 - Click (world map): kill / disturb
@@ -73,6 +75,8 @@ Note: Pause stops world evolution (cities/forests/etc.), but local actions (play
 - Hovering a village/city displays its name and highlights its whole agglomeration.
 - World map panel displays the current area type plus the Local View tile under the player.
 - If the current world cell is a village or city, its name is shown under the world map.
+- HP bars appear above player/NPCs when damaged and hide at full health.
+- Game Over screen appears on player death with a restart option.
 
 ## Visual Reference
 `visual-reference.html` lists:
@@ -105,6 +109,7 @@ Terrain defaults are defined in `CELL_TYPES` in `script.js`.
 - `style.css` — styling
 - `script.js` — simulation and rendering
 - `Mechanika_Gry.md`, `Design/` — design documentation
+- `CHANGELOG.md` — release notes
 
 ## License
 No license specified yet. Add a LICENSE file if you want to open-source the project.
