@@ -163,6 +163,42 @@ const LOCAL_BASE_WEIGHTS = {
     CITY: { PLAIN: 0.6, FOREST: 0.1, WATER: 0.1, MOUNTAIN: 0.05, CITY: 0.15 }
 };
 
+const LOCAL_VIEW_COLORS = {
+    PLAIN: { h: 110, s: 14, l: 15, v: 2 },
+    FOREST: { h: 125, s: 18, l: 13, v: 2 },
+    WATER: { h: 205, s: 18, l: 13, v: 2 },
+    MOUNTAIN: { h: 220, s: 8, l: 15, v: 2 },
+    VILLAGE: { h: 36, s: 14, l: 16, v: 2 },
+    CITY: { h: 255, s: 10, l: 16, v: 2 }
+};
+
+const LOCAL_VIEW_EMOJIS = {
+    PLAIN: ['🌿', '🌱', '🍃'],
+    FOREST: ['🌲', '🌳', '🌲'],
+    WATER: ['🌊', '💧', '🫧'],
+    MOUNTAIN: ['⛰️', '🏔️', '🪨', '❄️'],
+    VILLAGE: ['🏡', '🛖', '🌾'],
+    CITY: ['🏙️', '🏢', '🌆']
+};
+
+const LOCAL_VIEW_EMOJI_DENSITY = {
+    PLAIN: 0.22,
+    FOREST: 0.25,
+    WATER: 0.25,
+    MOUNTAIN: 0.2,
+    VILLAGE: 0.85,
+    CITY: 0.9
+};
+
+function hash01(...values) {
+    let h = 2166136261;
+    for (const value of values) {
+        h ^= (value | 0);
+        h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0) / 4294967295;
+}
+
 function expandOptionalSuffix(value) {
     if (!value.includes("(s)")) return value;
     return Math.random() < 0.5 ? value.replace("(s)", "") : value.replace("(s)", "s");
@@ -1134,32 +1170,66 @@ class Game {
 
     drawLocalGrid(worldX, worldY, offsetX, offsetY) {
         const grid = this.getLocalGrid(worldX, worldY);
-        const symbolMap = {
-            PLAIN: '.',
-            FOREST: '🌲',
-            WATER: '≈',
-            MOUNTAIN: '^',
-            VILLAGE: '🏡',
-            CITY: '🏙️'
-        };
         for (let y = 0; y < CONFIG.LOCAL_GRID_SIZE; y++) {
             for (let x = 0; x < CONFIG.LOCAL_GRID_SIZE; x++) {
                 const type = grid[y][x];
                 const px = x * this.viewCellSize + offsetX;
                 const py = y * this.viewCellSize + offsetY;
-                const symbol = symbolMap[type] || '.';
+                const colorBase = LOCAL_VIEW_COLORS[type] || LOCAL_VIEW_COLORS.PLAIN;
+                const colorSeed = hash01(worldX, worldY, x, y, 17);
+                const lightness = Math.max(
+                    10,
+                    Math.min(22, colorBase.l + (colorSeed - 0.5) * colorBase.v)
+                );
+                const color = `hsl(${colorBase.h}, ${colorBase.s}%, ${lightness}%)`;
+                const emojiList = LOCAL_VIEW_EMOJIS[type] || LOCAL_VIEW_EMOJIS.PLAIN;
+                const emojiSeed = hash01(worldX, worldY, x, y, 73);
+                const density = LOCAL_VIEW_EMOJI_DENSITY[type] ?? 0.35;
+                const showEmoji = (type === 'VILLAGE' || type === 'CITY') ? true : emojiSeed < density;
+                let symbol = showEmoji
+                    ? emojiList[Math.floor(emojiSeed * emojiList.length) % emojiList.length]
+                    : '';
 
-                this.viewCtx.globalAlpha = 0.85;
-                this.viewCtx.textAlign = 'center';
-                this.viewCtx.textBaseline = 'middle';
-                if (symbol.length === 1) {
-                    this.viewCtx.fillStyle = '#cbd5f5';
-                    this.viewCtx.font = `italic ${this.viewCellSize * 0.45}px "Cormorant Garamond"`;
-                } else {
-                    this.viewCtx.fillStyle = '#ffffff';
-                    this.viewCtx.font = `${this.viewCellSize * 0.65}px "Cormorant Garamond"`;
+                if (type === 'MOUNTAIN' && symbol && symbol !== '❄️') {
+                    const dist = Math.hypot(x - (CONFIG.LOCAL_GRID_SIZE - 1) / 2, y - (CONFIG.LOCAL_GRID_SIZE - 1) / 2);
+                    const maxDist = Math.hypot((CONFIG.LOCAL_GRID_SIZE - 1) / 2, (CONFIG.LOCAL_GRID_SIZE - 1) / 2) || 1;
+                    if (dist / maxDist < 0.45) {
+                        symbol = '❄️';
+                    }
                 }
-                this.viewCtx.fillText(symbol, px + this.viewCellSize * 0.5, py + this.viewCellSize * 0.5);
+
+                this.viewCtx.globalAlpha = 0.96;
+                this.viewCtx.fillStyle = color;
+                this.viewCtx.fillRect(px, py, this.viewCellSize, this.viewCellSize);
+
+                const textureSeed = hash01(worldX, worldY, x, y, 91);
+                if (textureSeed < 0.28) {
+                    this.viewCtx.globalAlpha = 0.12;
+                    this.viewCtx.strokeStyle = 'rgba(255,255,255,0.35)';
+                    this.viewCtx.lineWidth = 1;
+                    this.viewCtx.beginPath();
+                    this.viewCtx.moveTo(px + 1, py + this.viewCellSize - 2);
+                    this.viewCtx.lineTo(px + this.viewCellSize - 2, py + 1);
+                    this.viewCtx.stroke();
+                }
+
+                if (symbol) {
+                    this.viewCtx.globalAlpha = 0.75;
+                    this.viewCtx.textAlign = 'center';
+                    this.viewCtx.textBaseline = 'middle';
+                    this.viewCtx.fillStyle = '#f8fafc';
+                    this.viewCtx.font = `${this.viewCellSize * 0.58}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Cormorant Garamond"`;
+                    this.viewCtx.fillText(symbol, px + this.viewCellSize * 0.5, py + this.viewCellSize * 0.5);
+                } else {
+                    const dotSeed = hash01(worldX, worldY, x, y, 137);
+                    const dotX = px + this.viewCellSize * (0.3 + dotSeed * 0.4);
+                    const dotY = py + this.viewCellSize * (0.3 + hash01(worldX, worldY, x, y, 149) * 0.4);
+                    this.viewCtx.globalAlpha = 0.25;
+                    this.viewCtx.fillStyle = 'rgba(255,255,255,0.6)';
+                    this.viewCtx.beginPath();
+                    this.viewCtx.arc(dotX, dotY, Math.max(0.6, this.viewCellSize * 0.04), 0, Math.PI * 2);
+                    this.viewCtx.fill();
+                }
                 this.viewCtx.globalAlpha = 1.0;
             }
         }
@@ -1172,12 +1242,20 @@ class Game {
         if (entry && entry.type === baseType) return entry.grid;
 
         const neighborTypes = this.getWorldNeighborTypes(worldX, worldY);
-        const grid = this.generateLocalGrid(baseType, neighborTypes);
+        const grid = this.generateLocalGrid(baseType, neighborTypes, worldX, worldY);
         this.localGrids.set(key, { type: baseType, grid });
         return grid;
     }
 
-    generateLocalGrid(baseType, neighborTypes) {
+    generateLocalGrid(baseType, neighborTypes, worldX, worldY) {
+        if (baseType === 'WATER') {
+            const edgeWater = this.getWorldEdgeWater(worldX, worldY);
+            return this.generateLocalWaterGrid(worldX, worldY, edgeWater);
+        }
+        if (baseType === 'MOUNTAIN') {
+            const edgeMountain = this.getWorldEdgeMountain(worldX, worldY);
+            return this.generateLocalMountainGrid(worldX, worldY, edgeMountain);
+        }
         const weights = this.buildLocalWeights(baseType, neighborTypes);
         const grid = [];
         for (let y = 0; y < CONFIG.LOCAL_GRID_SIZE; y++) {
@@ -1189,6 +1267,214 @@ class Game {
         if (baseType === 'VILLAGE' || baseType === 'CITY') {
             const mid = Math.floor(CONFIG.LOCAL_GRID_SIZE / 2);
             grid[mid][mid] = baseType;
+        }
+        return grid;
+    }
+
+    generateLocalWaterGrid(worldX, worldY, edgeWater) {
+        const size = CONFIG.LOCAL_GRID_SIZE;
+        const center = (size - 1) / 2;
+        const maxDist = Math.hypot(center, center) || 1;
+        const water = Array.from({ length: size }, () => Array(size).fill(false));
+
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const dist = Math.hypot(x - center, y - center) / maxDist;
+                const threshold = 0.6 - dist * 0.25;
+                const noise = hash01(worldX, worldY, x, y, 211);
+                water[y][x] = noise < threshold;
+            }
+        }
+
+        const applyEdgeConstraints = () => {
+            const buffer = 1;
+            if (!edgeWater.top) {
+                for (let y = 0; y <= buffer; y++) {
+                    for (let x = 0; x < size; x++) water[y][x] = false;
+                }
+            } else {
+                for (let x = 0; x < size; x++) water[0][x] = true;
+            }
+            if (!edgeWater.bottom) {
+                for (let y = size - 1 - buffer; y < size; y++) {
+                    for (let x = 0; x < size; x++) water[y][x] = false;
+                }
+            } else {
+                for (let x = 0; x < size; x++) water[size - 1][x] = true;
+            }
+            if (!edgeWater.left) {
+                for (let x = 0; x <= buffer; x++) {
+                    for (let y = 0; y < size; y++) water[y][x] = false;
+                }
+            } else {
+                for (let y = 0; y < size; y++) water[y][0] = true;
+            }
+            if (!edgeWater.right) {
+                for (let x = size - 1 - buffer; x < size; x++) {
+                    for (let y = 0; y < size; y++) water[y][x] = false;
+                }
+            } else {
+                for (let y = 0; y < size; y++) water[y][size - 1] = true;
+            }
+        };
+
+        applyEdgeConstraints();
+
+        const countWaterNeighbors = (x, y) => {
+            let count = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+                    if (water[ny][nx]) count++;
+                }
+            }
+            return count;
+        };
+
+        for (let i = 0; i < 3; i++) {
+            const next = Array.from({ length: size }, () => Array(size).fill(false));
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const neighbors = countWaterNeighbors(x, y);
+                    if (water[y][x]) {
+                        next[y][x] = neighbors >= 3;
+                    } else {
+                        next[y][x] = neighbors >= 5;
+                    }
+                }
+            }
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) water[y][x] = next[y][x];
+            }
+            applyEdgeConstraints();
+        }
+
+        const shoreWeights = {
+            PLAIN: 0.7,
+            FOREST: 0.2,
+            MOUNTAIN: 0.1
+        };
+        const grid = [];
+        for (let y = 0; y < size; y++) {
+            grid[y] = [];
+            for (let x = 0; x < size; x++) {
+                if (water[y][x]) {
+                    grid[y][x] = 'WATER';
+                    continue;
+                }
+                const landNoise = hash01(worldX, worldY, x, y, 317);
+                const pick = landNoise * (shoreWeights.PLAIN + shoreWeights.FOREST + shoreWeights.MOUNTAIN);
+                if (pick < shoreWeights.PLAIN) grid[y][x] = 'PLAIN';
+                else if (pick < shoreWeights.PLAIN + shoreWeights.FOREST) grid[y][x] = 'FOREST';
+                else grid[y][x] = 'MOUNTAIN';
+            }
+        }
+        return grid;
+    }
+
+    generateLocalMountainGrid(worldX, worldY, edgeMountain) {
+        const size = CONFIG.LOCAL_GRID_SIZE;
+        const center = (size - 1) / 2;
+        const maxDist = Math.hypot(center, center) || 1;
+        const mountain = Array.from({ length: size }, () => Array(size).fill(false));
+
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const dist = Math.hypot(x - center, y - center) / maxDist;
+                const threshold = 0.64 - dist * 0.22;
+                const noise = hash01(worldX, worldY, x, y, 401);
+                mountain[y][x] = noise < threshold;
+            }
+        }
+
+        const applyEdgeConstraints = () => {
+            const buffer = 1;
+            if (!edgeMountain.top) {
+                for (let y = 0; y <= buffer; y++) {
+                    for (let x = 0; x < size; x++) mountain[y][x] = false;
+                }
+            } else {
+                for (let x = 0; x < size; x++) mountain[0][x] = true;
+            }
+            if (!edgeMountain.bottom) {
+                for (let y = size - 1 - buffer; y < size; y++) {
+                    for (let x = 0; x < size; x++) mountain[y][x] = false;
+                }
+            } else {
+                for (let x = 0; x < size; x++) mountain[size - 1][x] = true;
+            }
+            if (!edgeMountain.left) {
+                for (let x = 0; x <= buffer; x++) {
+                    for (let y = 0; y < size; y++) mountain[y][x] = false;
+                }
+            } else {
+                for (let y = 0; y < size; y++) mountain[y][0] = true;
+            }
+            if (!edgeMountain.right) {
+                for (let x = size - 1 - buffer; x < size; x++) {
+                    for (let y = 0; y < size; y++) mountain[y][x] = false;
+                }
+            } else {
+                for (let y = 0; y < size; y++) mountain[y][size - 1] = true;
+            }
+        };
+
+        applyEdgeConstraints();
+
+        const countMountainNeighbors = (x, y) => {
+            let count = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    if (dx === 0 && dy === 0) continue;
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+                    if (mountain[ny][nx]) count++;
+                }
+            }
+            return count;
+        };
+
+        for (let i = 0; i < 4; i++) {
+            const next = Array.from({ length: size }, () => Array(size).fill(false));
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const neighbors = countMountainNeighbors(x, y);
+                    if (mountain[y][x]) {
+                        next[y][x] = neighbors >= 2;
+                    } else {
+                        next[y][x] = neighbors >= 4;
+                    }
+                }
+            }
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) mountain[y][x] = next[y][x];
+            }
+            applyEdgeConstraints();
+        }
+
+        const foothillWeights = {
+            PLAIN: 0.6,
+            FOREST: 0.25,
+            MOUNTAIN: 0.15
+        };
+        const grid = [];
+        for (let y = 0; y < size; y++) {
+            grid[y] = [];
+            for (let x = 0; x < size; x++) {
+                if (mountain[y][x]) {
+                    grid[y][x] = 'MOUNTAIN';
+                    continue;
+                }
+                const landNoise = hash01(worldX, worldY, x, y, 487);
+                const pick = landNoise * (foothillWeights.PLAIN + foothillWeights.FOREST + foothillWeights.MOUNTAIN);
+                if (pick < foothillWeights.PLAIN) grid[y][x] = 'PLAIN';
+                else if (pick < foothillWeights.PLAIN + foothillWeights.FOREST) grid[y][x] = 'FOREST';
+                else grid[y][x] = 'MOUNTAIN';
+            }
         }
         return grid;
     }
@@ -1214,6 +1500,24 @@ class Game {
             if (cell && cell.type) types.push(cell.type);
         });
         return types;
+    }
+
+    getWorldEdgeWater(worldX, worldY) {
+        return {
+            top: worldY > 0 && this.grid[worldY - 1][worldX].type === 'WATER',
+            bottom: worldY < CONFIG.GRID_SIZE - 1 && this.grid[worldY + 1][worldX].type === 'WATER',
+            left: worldX > 0 && this.grid[worldY][worldX - 1].type === 'WATER',
+            right: worldX < CONFIG.GRID_SIZE - 1 && this.grid[worldY][worldX + 1].type === 'WATER'
+        };
+    }
+
+    getWorldEdgeMountain(worldX, worldY) {
+        return {
+            top: worldY > 0 && this.grid[worldY - 1][worldX].type === 'MOUNTAIN',
+            bottom: worldY < CONFIG.GRID_SIZE - 1 && this.grid[worldY + 1][worldX].type === 'MOUNTAIN',
+            left: worldX > 0 && this.grid[worldY][worldX - 1].type === 'MOUNTAIN',
+            right: worldX < CONFIG.GRID_SIZE - 1 && this.grid[worldY][worldX + 1].type === 'MOUNTAIN'
+        };
     }
 
     spawnPlayer() {
