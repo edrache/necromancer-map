@@ -87,21 +87,21 @@ Note: 1 TPS = 1 year per second, and each simulation turn advances the world by 
 - Local view base HSL colors, lightness variation, and emoji sets.
 
 ## Running the Game
-Option 1: open `index.html` in a browser.
+This project now uses ES modules, so it must be served over HTTP.
 
-Option 2: run a local static server (example):
+Run a local static server (example):
 ```bash
 python -m http.server 8080
 ```
 Then open `http://localhost:8080`.
 
 ## Configuration
-Key parameters live in `CONFIG` in `script.js`, including:
+Key parameters live in `CONFIG` in `src/config.js`, including:
 - grid size, movement speed, TPS
 - diffusion, consumption, expansion, regression rates
 - stability thresholds
 
-Terrain defaults are defined in `CELL_TYPES` in `script.js`.
+Terrain defaults are defined in `CELL_TYPES` in `src/config.js`.
 
 ## Limitations
 - Repression / necromancer “death” is scaffolded but currently disabled (the `checkRepression()` function is empty).
@@ -110,7 +110,12 @@ Terrain defaults are defined in `CELL_TYPES` in `script.js`.
 ## Project Structure
 - `index.html` — layout and UI
 - `style.css` — styling
-- `script.js` — simulation and rendering
+- `script.js` — module entry (bootstraps the game)
+- `src/config.js` — configuration + static data tables
+- `src/utils.js` — randomization + name helpers
+- `src/entities.js` — `Cell`, `Region`, `DeathSource`
+- `src/game.js` — simulation + rendering
+- `src/main.js` — game initialization + test hooks
 - `Mechanika_Gry.md`, `Design/` — design documentation
 - `CHANGELOG.md` — release notes
 

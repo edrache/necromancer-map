@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-02-09
+### Changed
+- Refactored the core script into ES module files for easier maintenance and extension.
+- `script.js` is now a lightweight entrypoint that boots the module graph.
+- The game must be served over HTTP (e.g., `python -m http.server`) because of module loading rules.
+
 ## 2026-02-08
 ### Added
 - Sleep screen with wake timer after player death.
