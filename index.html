@@ -27,6 +27,12 @@
                     <div id="world-info-local" class="world-info-row">Local Tile: -</div>
                     <div id="world-info-city" class="world-info-row is-hidden">Name: -</div>
                 </div>
+                <div id="look-log" class="look-log" aria-live="polite">
+                    <div class="look-log-title">Log</div>
+                    <div id="look-log-list" class="look-log-list">
+                        <div class="look-log-empty">No observations yet.</div>
+                    </div>
+                </div>
             </div>
             <div class="canvas-panel">
                 <div class="panel-label local-view-label">
@@ -116,6 +122,10 @@
         </div>
 
         <div id="city-tooltip" class="mystic-tooltip hidden"></div>
+        <div id="action-menu" class="action-menu hidden" role="menu" aria-hidden="true">
+            <div id="action-menu-title" class="action-menu-title">Object</div>
+            <div id="action-menu-actions" class="action-menu-actions"></div>
+        </div>
         <div id="year-display" class="year-display">Year 1 • Kills 0</div>
     </div>
     <script type="module" src="script.js"></script>
