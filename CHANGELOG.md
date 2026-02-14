@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-02-14
+### Added
+- City-cluster cemeteries: each named village/city cluster now gets one adjacent cemetery tile.
+- Cemetery rendering on world map with dedicated grave emoji.
+- Cemetery integration with city hover/highlight and city name preview.
+- Configurable cemetery parameters in `src/config.js`:
+  - `CEMETERY_GRAVE_GROWTH_DIVISOR`
+  - `CEMETERY_MAX_GRAVES`
+  - `CEMETERY_WORLD_EMOJIS`
+  - `CEMETERY_LOCAL_GRAVE_EMOJIS`
+- Cemetery summaries in `render_game_to_text` output (`cityName`, world position, grave count).
+
+### Changed
+- Cemetery grave generation now accumulates fractional yearly progress, so very small clusters (size 1–2) also produce graves over time.
+- Cemetery graves can be raised into zombies in Local View, including cemetery tiles outside city cells.
+- README updated to document the cemetery system and the new configuration knobs.
+
+### Fixed
+- Fixed edge case where small city clusters could fail to generate any graves even after many years.
+
 ## 2026-02-09
 ### Changed
 - Refactored the core script into ES module files for easier maintenance and extension.
