@@ -46,7 +46,9 @@ export const CONFIG = {
     ANIMAL_ATTACK_RADIUS: 0.7,
     ANIMAL_SIGHT_RADIUS: 4.6,
     ANIMAL_HOVER_RADIUS: 0.85,
-    ANIMAL_FOLLOW_RADIUS: 5.4
+    ANIMAL_FOLLOW_RADIUS: 5.4,
+    CEMETERY_GRAVE_GROWTH_DIVISOR: 40,
+    CEMETERY_MAX_GRAVES: 50
 };
 
 export const CELL_TYPES = {
@@ -200,6 +202,10 @@ export const LOCAL_PEOPLE_EMOJIS = [
     '🧑', '👨', '👩', '🧔', '👨‍🌾', '👩‍🌾', '👨‍🏭', '👩‍🏭',
     '👨‍🔧', '👩‍🔧', '👨‍🎨', '👩‍🎨', '👨‍🍳', '👩‍🍳', '👨‍⚕️', '👩‍⚕️'
 ];
+
+export const CEMETERY_WORLD_EMOJIS = ['🪦', '⚰️', '🪦', '⚰️'];
+
+export const CEMETERY_LOCAL_GRAVE_EMOJIS = ['🪦', '⚰️'];
 
 export const ANIMAL_CATALOG = {
     deer: { emoji: '🦌', minHp: 2, maxHp: 4, aggressive: false, provokedAggro: true },

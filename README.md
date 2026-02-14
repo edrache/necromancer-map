@@ -7,6 +7,7 @@ A dark, minimalist ecosystem simulation on a 20x20 grid where you play a necroma
 - Sustain resource simulation with production, diffusion, and consumption.
 - Stability drives expansion, regression, and visual feedback.
 - Villages and cities form named agglomerations with shared identity.
+- Each city agglomeration maintains an adjacent cemetery that stores grave history.
 - Necromancer actions: direct killing, raising zombies, and short‑lived Death Sources.
 - Reactive NPCs with HP, panic behavior, and combat response.
 - Time controls: pause, speed presets, and TPS slider.
@@ -35,8 +36,10 @@ Each turn runs in this order:
 6. Regression and expansion.
 7. Forest regrowth.
 8. City name updates after splits.
-9. Region detection (local ecosystems).
-10. UI refresh.
+9. Cemetery sync with city clusters.
+10. Cemetery grave growth update.
+11. Region detection (local ecosystems).
+12. UI refresh.
 
 ## Sustain, Population, Stability
 - Forests and water generate sustain.
@@ -50,12 +53,21 @@ Each turn runs in this order:
 - Cities can burn nearby forests to survive, at a stability cost.
 - Persistent shortages cause erosion (city → village → plain).
 
+## Cemeteries and Graves
+- Each named city/village cluster has exactly one cemetery tile adjacent to the cluster.
+- Cemetery has its own grave emoji on the world map, but still belongs to the same city group for hover/highlight and city-name preview.
+- Every year, cemetery grave history grows by:
+  - `floor(cluster_size / CEMETERY_GRAVE_GROWTH_DIVISOR)` in aggregate (fractional progress is accumulated between years).
+- Maximum cemetery capacity is `CEMETERY_MAX_GRAVES` (default: 200). After hitting the cap, no new graves are created.
+- In Local View, cemetery graves are represented as dead NPC-like bodies (`hp = 0`) and can be raised into zombies with the same `Raise Zombie` action.
+
 ## Necromancer Actions
 - Click on the world map: instantly kills population and drops stability on the selected cell.
 - Shift + D: spawn a Death Source that drains nearby stability and kills a portion of population for a few turns.
 - Game Mode (local view):
   - Hover an NPC in range to get a sword cursor, then click to kill (creates a grave).
   - Hover a grave in range to get a dark‑magic cursor, then click to raise a zombie.
+  - Cemetery graves outside city tiles can also be raised to zombies.
   - Zombies move slower than the player, avoid obstacles, and attack nearby NPCs.
   - NPCs can witness murders and retaliate; “ALERT” appears above alerted NPCs.
 
@@ -74,8 +86,9 @@ Note: 1 TPS = 1 year per second, and each simulation turn advances the world by 
 - When the player dies, previously discovered tiles fade to 50% alpha until revisited.
 - Local view renders a detailed vignette based on the current world cell.
 - Hovering a village/city displays its name and highlights its whole agglomeration.
+- Hovering a cemetery also displays and highlights its linked city agglomeration.
 - World map panel displays the current area type plus the Local View tile under the player.
-- If the current world cell is a village or city, its name is shown under the world map.
+- If the current world cell is a village/city or a cemetery, its linked city name is shown under the world map.
 - HP bars appear above player/NPCs when damaged and hide at full health.
 - Player death triggers a sleep screen with a wake timer; time continues to pass.
 - The current year and total kills (player + zombies) are displayed at the bottom of the screen (starts at year 1).
@@ -100,6 +113,9 @@ Key parameters live in `CONFIG` in `src/config.js`, including:
 - grid size, movement speed, TPS
 - diffusion, consumption, expansion, regression rates
 - stability thresholds
+- cemetery growth and cap:
+  - `CEMETERY_GRAVE_GROWTH_DIVISOR`
+  - `CEMETERY_MAX_GRAVES`
 
 Terrain defaults are defined in `CELL_TYPES` in `src/config.js`.
 

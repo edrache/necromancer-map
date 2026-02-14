@@ -35,3 +35,30 @@ Original prompt: @[skills/skills-openai/skills/.curated/develop-web-game/SKILL.m
 - [2026-02-13] Interaction polish:
   - action buttons that are out of range are now rendered as visible but disabled in the context menu,
   - added persistent `LOG` panel under world info to store `Look at` observations with observed object emoji.
+
+- [2026-02-14] Added cemetery system for city clusters:
+  - `src/config.js`: introduced configurable cemetery parameters:
+    - `CEMETERY_GRAVE_GROWTH_DIVISOR`,
+    - `CEMETERY_MAX_GRAVES`,
+    - `CEMETERY_WORLD_EMOJIS`,
+    - `CEMETERY_LOCAL_GRAVE_EMOJIS`.
+  - `src/game.js`: implemented city-cluster cemetery lifecycle:
+    - each city cluster keeps exactly one adjacent cemetery tile,
+    - cemetery is rendered as a dedicated grave emoji on the world map,
+    - hovering a cemetery shows the city name and highlights city cluster + cemetery tile,
+    - cemetery grave history grows each tick by `floor(clusterSize / divisor)` and is capped at 200.
+  - `src/game.js`: integrated cemetery graves into Local View:
+    - grave entities are stored as dead NPC-like bodies (`hp = 0`) and can be selected,
+    - `Raise Zombie` works on cemetery graves in non-city tiles,
+    - raising zombie from cemetery decrements cemetery grave stock.
+  - `src/main.js`: `render_game_to_text` now includes cemetery summary (city, position, graves).
+- [2026-02-14] Validation:
+  - syntax checks passed:
+    - `node --check src/config.js`
+    - `node --check src/main.js`
+    - `node --check src/game.js`
+  - Playwright client run completed with screenshot + state capture.
+  - Observed limitation: automatic run captured Local View canvas only; world-map cemetery emoji/highlight remains validated by code-path integration and text-state outputs.
+- [2026-02-14] Cemetery growth fix for small clusters:
+  - `src/game.js`: cemetery growth now accumulates fractional progress (`graveProgress += clusterSize / divisor`) and converts it to graves when it reaches full units.
+  - Effect: clusters of size `1` and `2` now also create graves over time (instead of never producing any with per-tick `floor(size / divisor)`).

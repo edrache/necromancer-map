@@ -1,6 +1,8 @@
 import {
     ANIMAL_CATALOG,
     ANIMALS_BY_AREA,
+    CEMETERY_LOCAL_GRAVE_EMOJIS,
+    CEMETERY_WORLD_EMOJIS,
     CELL_TYPES,
     CONFIG,
     LOCAL_BASE_WEIGHTS,
@@ -30,6 +32,7 @@ export class Game {
         this.localGrids = new Map();
         this.localPeople = new Map();
         this.localAnimals = new Map();
+        this.cemeteries = new Map();
         this.pendingZombieTransfers = [];
         this.pendingAnimalTransfers = [];
         this.isPaused = true;
@@ -38,7 +41,7 @@ export class Game {
         this.deathTurnsRemaining = 0;
         this.mouseX = 0;
         this.mouseY = 0;
-        this.hoveredGroup = null; // Set of cells in currently hovered city group
+        this.hoveredGroup = null; // Array of {x, y} in currently hovered city/cemetery group
         this.hoveredObject = null;
         this.menuTargetObject = null;
         this.transientStatusText = '';
@@ -215,6 +218,7 @@ export class Game {
     initGrid() {
         this.localGrids.clear();
         this.localAnimals.clear();
+        this.cemeteries.clear();
         const weights = {
             PLAIN: parseInt(document.getElementById('slider-plain').value),
             FOREST: parseInt(document.getElementById('slider-forest').value),
@@ -298,6 +302,7 @@ export class Game {
             }
         }
         this.detectRegions();
+        this.syncCemeteriesWithCities();
     }
 
     discoverWorldCell(worldX, worldY) {
@@ -378,6 +383,8 @@ export class Game {
         this.regressionExpansion();
         this.forestRegrowth();
         this.updateCityNamesOnSplit();
+        this.syncCemeteriesWithCities();
+        this.updateCemeteryGravesPerTick();
         this.detectRegions();
         this.checkRepression();
         this.year += 1;
@@ -805,6 +812,253 @@ export class Game {
         return;
     }
 
+    getCityClusters() {
+        const visited = new Set();
+        const clusters = [];
+        for (let y = 0; y < CONFIG.GRID_SIZE; y++) {
+            for (let x = 0; x < CONFIG.GRID_SIZE; x++) {
+                const start = this.grid[y]?.[x];
+                if (!start) continue;
+                if (visited.has(start)) continue;
+                if ((start.type !== 'VILLAGE' && start.type !== 'CITY') || !start.cityName) continue;
+
+                const queue = [start];
+                const cells = [];
+                visited.add(start);
+                while (queue.length > 0) {
+                    const current = queue.shift();
+                    cells.push(current);
+                    const neighbors = this.getAllNeighbors(current.x, current.y);
+                    neighbors.forEach((n) => {
+                        if (visited.has(n)) return;
+                        if ((n.type !== 'VILLAGE' && n.type !== 'CITY') || n.cityName !== start.cityName) return;
+                        visited.add(n);
+                        queue.push(n);
+                    });
+                }
+                clusters.push({ cityName: start.cityName, cells });
+            }
+        }
+        return clusters;
+    }
+
+    syncCemeteriesWithCities() {
+        const clusters = this.getCityClusters();
+        const next = new Map();
+
+        for (const cluster of clusters) {
+            let cemetery = this.cemeteries.get(cluster.cityName);
+            if (!cemetery) {
+                cemetery = {
+                    cityName: cluster.cityName,
+                    x: -1,
+                    y: -1,
+                    worldEmoji: CEMETERY_WORLD_EMOJIS[Math.floor(Math.random() * CEMETERY_WORLD_EMOJIS.length)] || '🪦',
+                    graveEmoji: CEMETERY_LOCAL_GRAVE_EMOJIS[Math.floor(Math.random() * CEMETERY_LOCAL_GRAVE_EMOJIS.length)] || '🪦',
+                    graveCount: 0,
+                    graveProgress: 0,
+                    clusterSize: cluster.cells.length
+                };
+            } else {
+                cemetery.cityName = cluster.cityName;
+                cemetery.clusterSize = cluster.cells.length;
+                if (!Number.isFinite(cemetery.graveProgress)) {
+                    cemetery.graveProgress = 0;
+                }
+            }
+
+            if (!this.isCemeteryPlacementValid(cemetery, cluster)) {
+                const spot = this.findCemeteryPlacement(cluster);
+                if (spot) {
+                    cemetery.x = spot.x;
+                    cemetery.y = spot.y;
+                }
+            }
+            next.set(cluster.cityName, cemetery);
+        }
+
+        this.cemeteries = next;
+        this.cleanupOrphanedCemeteryGraves();
+        for (const cemetery of this.cemeteries.values()) {
+            this.syncCemeteryLocalGraves(cemetery);
+        }
+    }
+
+    updateCemeteryGravesPerTick() {
+        if (!this.cemeteries.size) return;
+        for (const cemetery of this.cemeteries.values()) {
+            const size = Math.max(0, cemetery.clusterSize || 0);
+            const divisor = Math.max(1, CONFIG.CEMETERY_GRAVE_GROWTH_DIVISOR);
+            const maxGraves = Math.max(0, CONFIG.CEMETERY_MAX_GRAVES);
+            if ((cemetery.graveCount || 0) >= maxGraves) {
+                cemetery.graveProgress = 0;
+                continue;
+            }
+            cemetery.graveProgress = (cemetery.graveProgress || 0) + (size / divisor);
+            const growth = Math.floor(cemetery.graveProgress);
+            if (growth <= 0) continue;
+            cemetery.graveCount = Math.min(maxGraves, (cemetery.graveCount || 0) + growth);
+            cemetery.graveProgress -= growth;
+            this.syncCemeteryLocalGraves(cemetery);
+        }
+    }
+
+    getCemeteryAt(x, y) {
+        for (const cemetery of this.cemeteries.values()) {
+            if (cemetery.x === x && cemetery.y === y) {
+                return cemetery;
+            }
+        }
+        return null;
+    }
+
+    isCemeteryPlacementValid(cemetery, cluster) {
+        if (!cemetery || cemetery.x < 0 || cemetery.y < 0) return false;
+        const cell = this.grid[cemetery.y]?.[cemetery.x];
+        if (!cell) return false;
+        if (cell.type === 'VILLAGE' || cell.type === 'CITY') return false;
+        return this.isCellAdjacentToCluster(cemetery.x, cemetery.y, cluster);
+    }
+
+    isCellAdjacentToCluster(x, y, cluster) {
+        for (const cityCell of cluster.cells) {
+            const dist = Math.abs(cityCell.x - x) + Math.abs(cityCell.y - y);
+            if (dist === 1) return true;
+        }
+        return false;
+    }
+
+    findCemeteryPlacement(cluster) {
+        const preferred = [];
+        const fallback = [];
+        const seen = new Set();
+        for (const cityCell of cluster.cells) {
+            for (const neighbor of this.getNeighbors(cityCell.x, cityCell.y)) {
+                const key = `${neighbor.x},${neighbor.y}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                if (neighbor.type === 'VILLAGE' || neighbor.type === 'CITY') continue;
+                if (neighbor.type === 'WATER' || neighbor.type === 'MOUNTAIN') {
+                    fallback.push({ x: neighbor.x, y: neighbor.y });
+                } else {
+                    preferred.push({ x: neighbor.x, y: neighbor.y });
+                }
+            }
+        }
+        const choices = preferred.length ? preferred : fallback;
+        if (!choices.length) return null;
+        return choices[Math.floor(Math.random() * choices.length)];
+    }
+
+    getCityClusterByName(cityName) {
+        if (!cityName) return null;
+        const clusters = this.getCityClusters();
+        for (const cluster of clusters) {
+            if (cluster.cityName === cityName) return cluster;
+        }
+        return null;
+    }
+
+    getHoveredGroupForCity(cityName) {
+        if (!cityName) return null;
+        const cluster = this.getCityClusterByName(cityName);
+        if (!cluster) return null;
+        const coords = cluster.cells.map((cell) => ({ x: cell.x, y: cell.y }));
+        const cemetery = this.cemeteries.get(cityName);
+        if (cemetery) {
+            coords.push({ x: cemetery.x, y: cemetery.y });
+        }
+        return coords;
+    }
+
+    syncCemeteryLocalGraves(cemetery) {
+        if (!cemetery) return;
+        const cell = this.grid[cemetery.y]?.[cemetery.x];
+        if (!cell) return;
+        const people = this.ensureLocalPeopleEntry(cemetery.x, cemetery.y, cell.type);
+        const desired = Math.max(0, Math.min(CONFIG.CEMETERY_MAX_GRAVES, cemetery.graveCount || 0));
+
+        const existing = people.filter((person) =>
+            person.originCemetery === true && person.isDead && !person.isZombie && !person.hideGrave
+        );
+
+        if (existing.length > desired) {
+            let toRemove = existing.length - desired;
+            for (let i = people.length - 1; i >= 0 && toRemove > 0; i--) {
+                const person = people[i];
+                if (person.originCemetery !== true) continue;
+                if (!person.isDead || person.isZombie || person.hideGrave) continue;
+                people.splice(i, 1);
+                toRemove -= 1;
+            }
+        } else if (existing.length < desired) {
+            const toAdd = desired - existing.length;
+            for (let i = 0; i < toAdd; i++) {
+                people.push(this.createCemeteryGrave(cemetery, people.length + i));
+            }
+        }
+    }
+
+    cleanupOrphanedCemeteryGraves() {
+        for (const [key, entry] of this.localPeople.entries()) {
+            if (!entry || !Array.isArray(entry.people) || !entry.people.length) continue;
+            const nextPeople = entry.people.filter((person) => {
+                if (!person || person.originCemetery !== true) return true;
+                if (!person.isDead || person.isZombie || person.hideGrave) return true;
+                const cemetery = this.cemeteries.get(person.cemeteryCityName);
+                if (!cemetery) return false;
+                return key === `${cemetery.x},${cemetery.y}`;
+            });
+            entry.people = nextPeople;
+            if (!entry.people.length && entry.count === 0) {
+                this.localPeople.set(key, entry);
+            }
+        }
+    }
+
+    createCemeteryGrave(cemetery, seedOffset) {
+        const seedBase = Math.floor(hash01(cemetery.x, cemetery.y, this.year, seedOffset, 9023) * 1000000) || 1;
+        const rng = this.buildSeededRng(seedBase);
+        let spawn = this.findRandomWalkableLocalCellWithRng(cemetery.x, cemetery.y, this.getLocalGrid(cemetery.x, cemetery.y), rng)
+            || { x: (CONFIG.LOCAL_GRID_SIZE - 1) / 2, y: (CONFIG.LOCAL_GRID_SIZE - 1) / 2 };
+        const nearest = this.findNearestValidLocalCell(cemetery.x, cemetery.y, spawn.x, spawn.y);
+        if (nearest) {
+            spawn = { x: nearest.localX, y: nearest.localY };
+        }
+        return {
+            x: spawn.x,
+            y: spawn.y,
+            tx: spawn.x,
+            ty: spawn.y,
+            hasTarget: false,
+            idle: 999,
+            speed: 0,
+            seed: seedBase,
+            id: seedBase + seedOffset + Math.floor(Math.random() * 1000),
+            bobPhase: 0,
+            random: rng,
+            type: 'CEMETERY',
+            emoji: '🧟',
+            isDead: true,
+            graveEmoji: cemetery.graveEmoji || '🪦',
+            isZombie: false,
+            alertTimer: 0,
+            angryTimer: 0,
+            targetId: null,
+            aggroTargetId: null,
+            aggressionMode: null,
+            hp: 0,
+            maxHp: 1,
+            attackCooldown: 0,
+            baseSpeed: 0,
+            fleeToAllies: false,
+            lastAttackerType: null,
+            hideGrave: false,
+            originCemetery: true,
+            cemeteryCityName: cemetery.cityName
+        };
+    }
+
     getNeighbors(x, y) {
         const neighbors = [];
         const offsets = [[0, 1], [0, -1], [1, 0], [-1, 0]];
@@ -938,8 +1192,9 @@ export class Game {
         const localLabel = WORLD_TYPE_LABELS[localType] || localType;
         localEl.textContent = `Local Tile: ${localLabel}`;
 
-        if (cell.type === 'CITY' || cell.type === 'VILLAGE') {
-            const name = cell.cityName || "Unknown";
+        const cemetery = this.getCemeteryAt(this.player.worldX, this.player.worldY);
+        if (cell.type === 'CITY' || cell.type === 'VILLAGE' || cemetery) {
+            const name = cemetery?.cityName || cell.cityName || "Unknown";
             cityEl.textContent = `Name: ${name}`;
             cityEl.classList.remove('is-hidden');
         } else {
@@ -999,6 +1254,22 @@ export class Game {
 
         this.worldCtx.globalAlpha = 1.0;
 
+        for (const cemetery of this.cemeteries.values()) {
+            const cell = this.grid[cemetery.y]?.[cemetery.x];
+            if (!cell) continue;
+            const revealAll = this.viewMode === 'god';
+            if (!revealAll && !cell.discovered) continue;
+            this.worldCtx.font = `${this.worldCellSize * 0.62}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Cormorant Garamond"`;
+            this.worldCtx.textAlign = 'center';
+            this.worldCtx.textBaseline = 'middle';
+            this.worldCtx.fillStyle = '#ffffff';
+            this.worldCtx.fillText(
+                cemetery.worldEmoji || '🪦',
+                (cemetery.x + 0.5) * this.worldCellSize,
+                (cemetery.y + 0.5) * this.worldCellSize
+            );
+        }
+
         // Render Death Sources
         this.deathSources.forEach(ds => {
             this.worldCtx.font = `${this.worldCellSize * 0.5}px Arial`;
@@ -1013,7 +1284,8 @@ export class Game {
             this.worldCtx.setLineDash([4, 4]); // Magical dashed line
             this.worldCtx.beginPath();
 
-            const groupSet = new Set(this.hoveredGroup);
+            const keyFor = (x, y) => `${x},${y}`;
+            const groupSet = new Set(this.hoveredGroup.map((cell) => keyFor(cell.x, cell.y)));
             this.hoveredGroup.forEach(cell => {
                 const neighbors = [
                     { dx: 0, dy: -1, edge: 'top' },
@@ -1028,7 +1300,7 @@ export class Game {
                     let isEdge = false;
                     if (nx < 0 || nx >= CONFIG.GRID_SIZE || ny < 0 || ny >= CONFIG.GRID_SIZE) {
                         isEdge = true;
-                    } else if (!groupSet.has(this.grid[ny][nx])) {
+                    } else if (!groupSet.has(keyFor(nx, ny))) {
                         isEdge = true;
                     }
 
@@ -2876,17 +3148,18 @@ export class Game {
         this.mouseY = Math.floor((e.clientY - rect.top) / this.worldCellSize);
 
         const cell = (this.grid[this.mouseY] && this.grid[this.mouseY][this.mouseX]) ? this.grid[this.mouseY][this.mouseX] : null;
+        const cemetery = this.getCemeteryAt(this.mouseX, this.mouseY);
 
         const canInspect = this.viewMode === 'god' || !!cell?.discovered;
-        if (cell && canInspect && (cell.type === 'VILLAGE' || cell.type === 'CITY') && cell.cityName) {
-            this.tooltip.innerText = cell.cityName;
+        if (canInspect && ((cell && (cell.type === 'VILLAGE' || cell.type === 'CITY') && cell.cityName) || cemetery)) {
+            const cityName = cemetery?.cityName || cell?.cityName || '';
+            this.tooltip.innerText = cityName;
             // Center tooltip above cursor
             this.tooltip.style.left = `${e.clientX}px`;
             this.tooltip.style.top = `${e.clientY - 20}px`;
             this.tooltip.classList.remove('hidden');
 
-            // Find all connected cells with same name
-            this.hoveredGroup = this.getCityGroup(cell);
+            this.hoveredGroup = this.getHoveredGroupForCity(cityName);
         } else {
             this.tooltip.classList.add('hidden');
             this.hoveredGroup = null;
@@ -2917,6 +3190,8 @@ export class Game {
             const personTarget = this.pickPersonObject(localX, localY, cell);
             if (personTarget) return personTarget;
         } else {
+            const undeadTarget = this.pickWildernessPersonObject(localX, localY);
+            if (undeadTarget) return undeadTarget;
             const animalTarget = this.pickAnimalObject(localX, localY);
             if (animalTarget) return animalTarget;
         }
@@ -2948,6 +3223,34 @@ export class Game {
         else if (best.isZombie) kind = 'zombie';
         return {
             kind,
+            worldX: this.player.worldX,
+            worldY: this.player.worldY,
+            x: best.x,
+            y: best.y,
+            person: best
+        };
+    }
+
+    pickWildernessPersonObject(localX, localY) {
+        const key = `${this.player.worldX},${this.player.worldY}`;
+        const entry = this.localPeople.get(key);
+        if (!entry || !Array.isArray(entry.people) || !entry.people.length) return null;
+
+        let best = null;
+        let bestDist = CONFIG.NPC_HOVER_RADIUS;
+        for (const person of entry.people) {
+            if (person.isDead && person.hideGrave) continue;
+            if (!person.isDead && !person.isZombie) continue;
+            const dx = person.x + 0.5 - localX;
+            const dy = person.y + 0.5 - localY;
+            const dist = Math.hypot(dx, dy);
+            if (dist > bestDist) continue;
+            best = person;
+            bestDist = dist;
+        }
+        if (!best) return null;
+        return {
+            kind: best.isZombie ? 'zombie' : 'grave',
             worldX: this.player.worldX,
             worldY: this.player.worldY,
             x: best.x,
@@ -3137,6 +3440,12 @@ export class Game {
         if (distToPlayer > CONFIG.NPC_INTERACT_RANGE) {
             this.showTransientStatus('You are too far away to raise this grave.');
             return;
+        }
+        if (person.originCemetery === true) {
+            const cemetery = this.getCemeteryAt(target.worldX, target.worldY);
+            if (cemetery) {
+                cemetery.graveCount = Math.max(0, (cemetery.graveCount || 0) - 1);
+            }
         }
         this.raiseZombie(person);
     }
@@ -3820,6 +4129,7 @@ export class Game {
 
         if (this.grid[y] && this.grid[y][x]) {
             this.killCell(x, y);
+            this.syncCemeteriesWithCities();
             this.renderWorld();
         }
     }
