@@ -2877,7 +2877,8 @@ export class Game {
 
         const cell = (this.grid[this.mouseY] && this.grid[this.mouseY][this.mouseX]) ? this.grid[this.mouseY][this.mouseX] : null;
 
-        if (cell && cell.discovered && (cell.type === 'VILLAGE' || cell.type === 'CITY') && cell.cityName) {
+        const canInspect = this.viewMode === 'god' || !!cell?.discovered;
+        if (cell && canInspect && (cell.type === 'VILLAGE' || cell.type === 'CITY') && cell.cityName) {
             this.tooltip.innerText = cell.cityName;
             // Center tooltip above cursor
             this.tooltip.style.left = `${e.clientX}px`;
