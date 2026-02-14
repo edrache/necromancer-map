@@ -9,6 +9,7 @@ A dark, minimalist ecosystem simulation on a 20x20 grid where you play a necroma
 - Villages and cities form named agglomerations with shared identity.
 - Each city agglomeration maintains an adjacent cemetery that stores grave history.
 - Necromancer actions: direct killing, raising zombies, and short‑lived Death Sources.
+- Necromancy spell system with configurable spells in a separate module.
 - Reactive NPCs with HP, panic behavior, and combat response.
 - Time controls: pause, speed presets, and TPS slider.
 
@@ -75,6 +76,25 @@ Each turn runs in this order:
     - When used, all zombies in that area focus and attack the selected target.
   - Zombies move slower than the player, avoid obstacles, and attack nearby NPCs.
   - NPCs can witness murders and retaliate; “ALERT” appears above alerted NPCs.
+  - Click the necromancer to open the spell menu and cast area necromancy.
+
+## Necromancy Spells
+- Spells are defined in `src/spells.js` (`NECROMANCY_SPELLS`) for easier extension.
+- Current spell:
+  - `Ossuary Ascension 💀7`
+  - Magic harvest radius: `5` tiles (dashed preview ring).
+  - Raise radius: `2` tiles (solid preview ring).
+- Valid magic sources for spell cost:
+  - dead NPC bodies / graves (`hp = 0`),
+  - dead animals (`hp = 0`),
+  - living zombies.
+- Consumption priority:
+  - nearest first,
+  - dead NPC/animals before zombies.
+- Hovering the spell in the action menu previews:
+  - harvest radius,
+  - raise radius,
+  - highlighted bodies that will be raised.
 
 ## Controls
 - Click (world map): kill / disturb
@@ -135,6 +155,7 @@ Terrain defaults are defined in `CELL_TYPES` in `src/config.js`.
 - `src/config.js` — configuration + static data tables
 - `src/utils.js` — randomization + name helpers
 - `src/entities.js` — `Cell`, `Region`, `DeathSource`
+- `src/spells.js` — modular necromancy spell definitions
 - `src/game.js` — simulation + rendering
 - `src/main.js` — game initialization + test hooks
 - `Mechanika_Gry.md`, `Design/` — design documentation

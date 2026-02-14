@@ -19,6 +19,7 @@ import {
     pickFromWeights
 } from './utils.js';
 import { Cell, DeathSource, Region } from './entities.js';
+import { NECROMANCY_SPELLS } from './spells.js';
 
 export class Game {
     constructor() {
@@ -44,6 +45,7 @@ export class Game {
         this.hoveredGroup = null; // Array of {x, y} in currently hovered city/cemetery group
         this.hoveredObject = null;
         this.menuTargetObject = null;
+        this.activeActionPreview = null;
         this.transientStatusText = '';
         this.transientStatusUntil = 0;
         this.tooltip = document.getElementById('city-tooltip');
@@ -1373,6 +1375,7 @@ export class Game {
         }
 
         if (this.viewMode === 'game') {
+            this.drawActionPreviewOverlay(offsetX, offsetY);
             this.drawObjectSelectionFrame(offsetX, offsetY);
         }
 
@@ -1575,6 +1578,7 @@ export class Game {
         const hpBarHeight = Math.max(2, this.viewCellSize * 0.08);
 
         for (const animal of animals) {
+            if (animal.isConsumed) continue;
             const bob = animal.isDead ? 0 : Math.sin((this.animationClock * 2.6) + animal.bobPhase) * this.viewCellSize * 0.02;
             const px = (animal.x + 0.5) * this.viewCellSize + offsetX;
             const py = (animal.y + 0.5) * this.viewCellSize + offsetY + bob;
@@ -1967,6 +1971,7 @@ export class Game {
                 hp,
                 maxHp: hp,
                 isDead: false,
+                isConsumed: false,
                 alwaysAggressive: !!info.aggressive,
                 provokedAggro: !!info.provokedAggro,
                 isProvoked: false,
@@ -3191,6 +3196,9 @@ export class Game {
         const cell = this.grid[this.player.worldY]?.[this.player.worldX];
         if (!cell) return null;
 
+        const playerTarget = this.pickPlayerObject(localX, localY);
+        if (playerTarget) return playerTarget;
+
         if (cell.type === 'VILLAGE' || cell.type === 'CITY') {
             const personTarget = this.pickPersonObject(localX, localY, cell);
             if (personTarget) return personTarget;
@@ -3202,6 +3210,20 @@ export class Game {
         }
 
         return this.pickTileObject(localX, localY);
+    }
+
+    pickPlayerObject(localX, localY) {
+        const dx = this.player.localX + 0.5 - localX;
+        const dy = this.player.localY + 0.5 - localY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > CONFIG.NPC_HOVER_RADIUS) return null;
+        return {
+            kind: 'player',
+            worldX: this.player.worldX,
+            worldY: this.player.worldY,
+            x: this.player.localX,
+            y: this.player.localY
+        };
     }
 
     pickPersonObject(localX, localY, cell) {
@@ -3270,6 +3292,7 @@ export class Game {
         let best = null;
         let bestDist = CONFIG.ANIMAL_HOVER_RADIUS;
         for (const animal of animals) {
+            if (animal.isConsumed) continue;
             const dx = animal.x + 0.5 - localX;
             const dy = animal.y + 0.5 - localY;
             const dist = Math.hypot(dx, dy);
@@ -3330,6 +3353,7 @@ export class Game {
     openActionMenu(target, clientX, clientY) {
         if (!this.actionMenu || !this.actionMenuActions || !this.actionMenuTitle) return;
         this.menuTargetObject = target;
+        this.activeActionPreview = null;
         const actions = this.getActionsForObject(target);
         this.actionMenuTitle.textContent = this.getObjectTitle(target);
         this.actionMenuActions.innerHTML = '';
@@ -3349,6 +3373,10 @@ export class Game {
                 action.run();
                 this.closeActionMenu();
             });
+            btn.addEventListener('mouseenter', () => this.setActionPreview(action));
+            btn.addEventListener('mouseleave', () => this.clearActionPreview(action));
+            btn.addEventListener('focus', () => this.setActionPreview(action));
+            btn.addEventListener('blur', () => this.clearActionPreview(action));
             this.actionMenuActions.appendChild(btn);
         });
         const padding = 16;
@@ -3364,6 +3392,7 @@ export class Game {
 
     closeActionMenu() {
         this.menuTargetObject = null;
+        this.activeActionPreview = null;
         if (!this.actionMenu) return;
         this.actionMenu.classList.add('hidden');
         this.actionMenu.setAttribute('aria-hidden', 'true');
@@ -3378,6 +3407,20 @@ export class Game {
 
     getActionsForObject(target) {
         const actions = [{ label: 'Look at', enabled: true, run: () => this.executeLookAt(target) }];
+
+        if (target.kind === 'player') {
+            for (const spell of NECROMANCY_SPELLS) {
+                const plan = this.planNecromancySpell(spell);
+                actions.unshift({
+                    label: `${spell.name} ${spell.costEmoji}${spell.requiredMagic}`,
+                    enabled: plan.canCast,
+                    reason: plan.reason,
+                    run: () => this.executeNecromancySpell(spell),
+                    preview: { type: 'necromancy-spell', spellId: spell.id }
+                });
+            }
+            return actions;
+        }
 
         const canShowZombieAttack = target
             && (target.kind === 'npc' || (target.kind === 'animal' && !target.animal?.isDead));
@@ -3419,6 +3462,21 @@ export class Game {
             });
         }
         return actions;
+    }
+
+    setActionPreview(action) {
+        if (!action || !action.preview) {
+            this.activeActionPreview = null;
+            return;
+        }
+        this.activeActionPreview = action.preview;
+    }
+
+    clearActionPreview(action) {
+        if (!action || !action.preview) return;
+        if (this.activeActionPreview === action.preview) {
+            this.activeActionPreview = null;
+        }
     }
 
     hasLivingZombiesAt(worldX, worldY) {
@@ -3481,13 +3539,184 @@ export class Game {
             this.showTransientStatus('You are too far away to raise this grave.');
             return;
         }
-        if (person.originCemetery === true) {
-            const cemetery = this.getCemeteryAt(target.worldX, target.worldY);
-            if (cemetery) {
-                cemetery.graveCount = Math.max(0, (cemetery.graveCount || 0) - 1);
+        this.consumeCemeteryGraveStock(person, target.worldX, target.worldY);
+        this.raiseZombie(person);
+    }
+
+    executeNecromancySpell(spell) {
+        if (!spell) return;
+        const plan = this.planNecromancySpell(spell);
+        if (!plan.canCast) {
+            this.showTransientStatus(plan.reason || 'Not enough necromantic essence.');
+            return;
+        }
+
+        for (const source of plan.consumedSources) {
+            this.consumeNecromancySource(source);
+        }
+
+        let raised = 0;
+        for (const target of plan.raiseTargets) {
+            if (!target || target.isDead !== true || target.hideGrave === true || target.isZombie === true) {
+                continue;
+            }
+            this.consumeCemeteryGraveStock(target, this.player.worldX, this.player.worldY);
+            this.raiseZombie(target);
+            raised += 1;
+        }
+
+        this.showTransientStatus(`${spell.name}: raised ${raised} zombie${raised === 1 ? '' : 's'}.`, 3200);
+    }
+
+    planNecromancySpell(spell) {
+        const raiseCandidates = this.collectRaiseableCorpses(spell.zombieRaiseRadius);
+        const { allSources, consumedSources } = this.planNecromancySourceConsumption(
+            spell.magicHarvestRadius,
+            spell.requiredMagic,
+            raiseCandidates
+        );
+        const enoughMagic = consumedSources.length >= spell.requiredMagic;
+
+        const consumedBodies = new Set(
+            consumedSources
+                .filter((source) => source.type === 'dead-person')
+                .map((source) => source.person)
+        );
+        const raiseTargets = raiseCandidates.filter((person) => !consumedBodies.has(person));
+
+        if (!enoughMagic) {
+            return {
+                canCast: false,
+                reason: `Need ${spell.requiredMagic} ${spell.costEmoji}. Available: ${allSources.length}.`,
+                consumedSources,
+                raiseTargets
+            };
+        }
+        if (!raiseCandidates.length) {
+            return {
+                canCast: false,
+                reason: 'No graves or dead NPCs in raise radius.',
+                consumedSources,
+                raiseTargets
+            };
+        }
+        if (!raiseTargets.length) {
+            return {
+                canCast: false,
+                reason: 'No raise targets left after essence harvest.',
+                consumedSources,
+                raiseTargets
+            };
+        }
+        return {
+            canCast: true,
+            reason: '',
+            consumedSources,
+            raiseTargets
+        };
+    }
+
+    planNecromancySourceConsumption(radius, requiredMagic, raiseCandidates) {
+        const allSources = this.collectNecromancySources(radius);
+        const protectedBodies = new Set(raiseCandidates);
+        const preferredSources = [];
+        const fallbackSources = [];
+
+        for (const source of allSources) {
+            if (source.type === 'dead-person' && protectedBodies.has(source.person)) {
+                fallbackSources.push(source);
+                continue;
+            }
+            preferredSources.push(source);
+        }
+
+        const consumedSources = preferredSources.slice(0, requiredMagic);
+        if (consumedSources.length < requiredMagic) {
+            const missing = requiredMagic - consumedSources.length;
+            consumedSources.push(...fallbackSources.slice(0, missing));
+        }
+
+        return { allSources, consumedSources };
+    }
+
+    collectNecromancySources(radius) {
+        const sources = [];
+        const people = this.getCurrentAreaPeople();
+        for (const person of people) {
+            const dist = Math.hypot((person.x + 0.5) - (this.player.localX + 0.5), (person.y + 0.5) - (this.player.localY + 0.5));
+            if (dist > radius) continue;
+            if (person.isDead && !person.isZombie && !person.hideGrave && person.hp <= 0) {
+                sources.push({ type: 'dead-person', priority: 0, dist, person });
+            } else if (person.isZombie && !person.isDead) {
+                sources.push({ type: 'zombie', priority: 1, dist, person });
             }
         }
-        this.raiseZombie(person);
+
+        const animals = this.getLocalAnimals(this.player.worldX, this.player.worldY);
+        for (const animal of animals) {
+            if (animal.isConsumed) continue;
+            if (!animal.isDead || animal.hp > 0) continue;
+            const dist = Math.hypot((animal.x + 0.5) - (this.player.localX + 0.5), (animal.y + 0.5) - (this.player.localY + 0.5));
+            if (dist > radius) continue;
+            sources.push({ type: 'dead-animal', priority: 0, dist, animal });
+        }
+
+        sources.sort((a, b) => (a.priority - b.priority) || (a.dist - b.dist));
+        return sources;
+    }
+
+    collectRaiseableCorpses(radius) {
+        const targets = [];
+        const people = this.getCurrentAreaPeople();
+        for (const person of people) {
+            if (!person.isDead || person.isZombie || person.hideGrave || person.hp > 0) continue;
+            const dist = Math.hypot((person.x + 0.5) - (this.player.localX + 0.5), (person.y + 0.5) - (this.player.localY + 0.5));
+            if (dist > radius) continue;
+            targets.push({ person, dist });
+        }
+        targets.sort((a, b) => a.dist - b.dist);
+        return targets.map((entry) => entry.person);
+    }
+
+    getCurrentAreaPeople() {
+        const cell = this.grid[this.player.worldY]?.[this.player.worldX];
+        if (!cell) return [];
+        if (cell.type === 'VILLAGE' || cell.type === 'CITY') {
+            const count = this.getLocalPeopleCount(cell);
+            if (count <= 0) return [];
+            return this.getLocalPeople(this.player.worldX, this.player.worldY, count);
+        }
+        const key = `${this.player.worldX},${this.player.worldY}`;
+        const entry = this.localPeople.get(key);
+        if (!entry || !Array.isArray(entry.people)) return [];
+        return entry.people;
+    }
+
+    consumeNecromancySource(source) {
+        if (!source) return;
+        if (source.type === 'dead-person') {
+            const person = source.person;
+            if (!person || !person.isDead || person.isZombie || person.hideGrave || person.hp > 0) return;
+            person.hideGrave = true;
+            this.consumeCemeteryGraveStock(person, this.player.worldX, this.player.worldY);
+            return;
+        }
+        if (source.type === 'dead-animal') {
+            const animal = source.animal;
+            if (!animal || animal.isConsumed || !animal.isDead || animal.hp > 0) return;
+            animal.isConsumed = true;
+            return;
+        }
+        if (source.type === 'zombie') {
+            this.killZombie(source.person);
+        }
+    }
+
+    consumeCemeteryGraveStock(person, worldX, worldY) {
+        if (!person || person.originCemetery !== true) return;
+        const cemetery = this.getCemeteryAt(worldX, worldY);
+        if (!cemetery) return;
+        cemetery.graveCount = Math.max(0, (cemetery.graveCount || 0) - 1);
     }
 
     executeZombieAttack(target) {
@@ -3535,6 +3764,9 @@ export class Game {
 
     describeObject(target) {
         if (!target) return 'You see nothing of note.';
+        if (target.kind === 'player') {
+            return `Necromancer • HP ${this.player.hp}/${this.player.maxHp}`;
+        }
         if (target.kind === 'npc') {
             const person = target.person;
             return `Villager • HP ${person.hp}/${person.maxHp}`;
@@ -3567,6 +3799,7 @@ export class Game {
 
     getObjectEmoji(target) {
         if (!target) return '👁️';
+        if (target.kind === 'player') return '🧙‍♂️';
         if (target.kind === 'npc') return target.person?.emoji || '🧑';
         if (target.kind === 'zombie') return '🧟';
         if (target.kind === 'grave') return target.person?.graveEmoji || '🪦';
@@ -3597,11 +3830,61 @@ export class Game {
 
     getObjectTitle(target) {
         if (!target) return 'Object';
+        if (target.kind === 'player') return 'Necromancer';
         if (target.kind === 'npc') return 'NPC';
         if (target.kind === 'zombie') return 'Zombie';
         if (target.kind === 'grave') return 'Grave';
         if (target.kind === 'animal') return 'Animal';
         return 'Environment';
+    }
+
+    drawActionPreviewOverlay(offsetX, offsetY) {
+        if (!this.activeActionPreview) return;
+        if (this.activeActionPreview.type !== 'necromancy-spell') return;
+        const spell = NECROMANCY_SPELLS.find((entry) => entry.id === this.activeActionPreview.spellId);
+        if (!spell) return;
+        this.drawNecromancySpellPreview(spell, offsetX, offsetY);
+    }
+
+    drawNecromancySpellPreview(spell, offsetX, offsetY) {
+        const plan = this.planNecromancySpell(spell);
+        const centerX = (this.player.localX + 0.5) * this.viewCellSize + offsetX;
+        const centerY = (this.player.localY + 0.5) * this.viewCellSize + offsetY;
+        const harvestRadiusPx = spell.magicHarvestRadius * this.viewCellSize;
+        const raiseRadiusPx = spell.zombieRaiseRadius * this.viewCellSize;
+
+        this.viewCtx.save();
+
+        this.viewCtx.setLineDash([8, 6]);
+        this.viewCtx.lineWidth = Math.max(1.5, this.viewCellSize * 0.1);
+        this.viewCtx.strokeStyle = 'rgba(244, 244, 245, 0.92)';
+        this.viewCtx.beginPath();
+        this.viewCtx.arc(centerX, centerY, harvestRadiusPx, 0, Math.PI * 2);
+        this.viewCtx.stroke();
+
+        this.viewCtx.setLineDash([]);
+        this.viewCtx.lineWidth = Math.max(1.5, this.viewCellSize * 0.1);
+        this.viewCtx.strokeStyle = 'rgba(239, 68, 68, 0.92)';
+        this.viewCtx.beginPath();
+        this.viewCtx.arc(centerX, centerY, raiseRadiusPx, 0, Math.PI * 2);
+        this.viewCtx.stroke();
+
+        const highlightStroke = plan.canCast ? 'rgba(34, 197, 94, 0.95)' : 'rgba(251, 146, 60, 0.95)';
+        const highlightFill = plan.canCast ? 'rgba(34, 197, 94, 0.25)' : 'rgba(251, 146, 60, 0.2)';
+        for (const person of plan.raiseTargets) {
+            const px = (person.x + 0.5) * this.viewCellSize + offsetX;
+            const py = (person.y + 0.5) * this.viewCellSize + offsetY;
+            const r = Math.max(8, this.viewCellSize * 0.42);
+            this.viewCtx.fillStyle = highlightFill;
+            this.viewCtx.beginPath();
+            this.viewCtx.arc(px, py, r, 0, Math.PI * 2);
+            this.viewCtx.fill();
+            this.viewCtx.lineWidth = Math.max(1.2, this.viewCellSize * 0.08);
+            this.viewCtx.strokeStyle = highlightStroke;
+            this.viewCtx.stroke();
+        }
+
+        this.viewCtx.restore();
     }
 
     drawObjectSelectionFrame(offsetX, offsetY) {
@@ -3632,6 +3915,7 @@ export class Game {
     isObjectStillValid(target) {
         if (!target) return false;
         if (target.worldX !== this.player.worldX || target.worldY !== this.player.worldY) return false;
+        if (target.kind === 'player') return true;
         if (target.kind === 'npc') return !!target.person && !target.person.isDead && !target.person.isZombie;
         if (target.kind === 'zombie') return !!target.person && target.person.isZombie && !target.person.isDead;
         if (target.kind === 'grave') return !!target.person && target.person.isDead && !target.person.hideGrave;
