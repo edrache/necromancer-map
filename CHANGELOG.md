@@ -11,11 +11,14 @@
   - `CEMETERY_WORLD_EMOJIS`
   - `CEMETERY_LOCAL_GRAVE_EMOJIS`
 - Cemetery summaries in `render_game_to_text` output (`cityName`, world position, grave count).
+- New local context action: `Zombie Attack` for NPC and living animal targets.
 
 ### Changed
 - Cemetery grave generation now accumulates fractional yearly progress, so very small clusters (size 1–2) also produce graves over time.
 - Cemetery graves can be raised into zombies in Local View, including cemetery tiles outside city cells.
 - README updated to document the cemetery system and the new configuration knobs.
+- `Zombie Attack` is always shown in the NPC/animal context menu and becomes disabled when no living zombies are present in the same world area.
+- `Zombie Attack` does not require target proximity to the player and orders all zombies from the area to focus the selected target.
 
 ### Fixed
 - Fixed edge case where small city clusters could fail to generate any graves even after many years.

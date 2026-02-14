@@ -1054,6 +1054,8 @@ export class Game {
             fleeToAllies: false,
             lastAttackerType: null,
             hideGrave: false,
+            commandTargetType: null,
+            commandTargetId: null,
             originCemetery: true,
             cemeteryCityName: cemetery.cityName
         };
@@ -1892,7 +1894,9 @@ export class Game {
                 baseSpeed,
                 fleeToAllies: false,
                 lastAttackerType: null,
-                hideGrave: false
+                hideGrave: false,
+                commandTargetType: null,
+                commandTargetId: null
             });
         }
 
@@ -1955,6 +1959,7 @@ export class Game {
                 speed: baseSpeed,
                 baseSpeed,
                 seed: seedBase + i,
+                id: seedBase + i + 1,
                 bobPhase: rng() * Math.PI * 2,
                 random: rng,
                 emoji: info.emoji,
@@ -3373,6 +3378,21 @@ export class Game {
 
     getActionsForObject(target) {
         const actions = [{ label: 'Look at', enabled: true, run: () => this.executeLookAt(target) }];
+
+        const canShowZombieAttack = target
+            && (target.kind === 'npc' || (target.kind === 'animal' && !target.animal?.isDead));
+        if (canShowZombieAttack) {
+            const areaWorldX = Number.isFinite(target.worldX) ? target.worldX : this.player.worldX;
+            const areaWorldY = Number.isFinite(target.worldY) ? target.worldY : this.player.worldY;
+            const canOrderZombieAttack = this.hasLivingZombiesAt(areaWorldX, areaWorldY);
+            actions.unshift({
+                label: 'Zombie Attack',
+                enabled: canOrderZombieAttack,
+                reason: canOrderZombieAttack ? '' : 'No zombies in this area',
+                run: () => this.executeZombieAttack(target)
+            });
+        }
+
         if (target.kind === 'npc') {
             const inRange = this.isTargetInInteractRange(target);
             actions.unshift({
@@ -3399,6 +3419,26 @@ export class Game {
             });
         }
         return actions;
+    }
+
+    hasLivingZombiesAt(worldX, worldY) {
+        return this.getLivingZombiesAt(worldX, worldY).length > 0;
+    }
+
+    getLivingZombiesAt(worldX, worldY) {
+        const key = `${worldX},${worldY}`;
+        const cell = this.grid[worldY]?.[worldX];
+        if (!cell) return [];
+        if (cell.type === 'VILLAGE' || cell.type === 'CITY') {
+            const count = this.getLocalPeopleCount(cell);
+            if (count > 0) {
+                const people = this.getLocalPeople(worldX, worldY, count);
+                return people.filter((person) => person.isZombie && !person.isDead);
+            }
+        }
+        const entry = this.localPeople.get(key);
+        if (!entry || !Array.isArray(entry.people)) return [];
+        return entry.people.filter((person) => person.isZombie && !person.isDead);
     }
 
     isTargetInInteractRange(target) {
@@ -3448,6 +3488,38 @@ export class Game {
             }
         }
         this.raiseZombie(person);
+    }
+
+    executeZombieAttack(target) {
+        if (!target) return;
+        const zombies = this.getLivingZombiesAt(target.worldX, target.worldY);
+        if (!zombies.length) {
+            this.showTransientStatus('No zombies in this area.');
+            return;
+        }
+
+        let targetId = null;
+        let targetType = null;
+        if (target.kind === 'npc') {
+            if (!target.person || target.person.isDead || target.person.isZombie) return;
+            targetId = target.person.id;
+            targetType = 'npc';
+        } else if (target.kind === 'animal') {
+            if (!target.animal || target.animal.isDead) return;
+            targetId = target.animal.id;
+            targetType = 'animal';
+        } else {
+            return;
+        }
+
+        for (const zombie of zombies) {
+            zombie.commandTargetType = targetType;
+            zombie.commandTargetId = targetId;
+            zombie.targetId = targetId;
+            zombie.alertTimer = CONFIG.ZOMBIE_ALERT_DURATION;
+            zombie.angryTimer = 0.9;
+        }
+        this.showTransientStatus(`Zombie Attack ordered (${zombies.length}).`, 2400);
     }
 
     executeLookAt(target) {
@@ -3582,6 +3654,8 @@ export class Game {
         person.maxHp = 1;
         person.attackCooldown = 0;
         person.hideGrave = false;
+        person.commandTargetType = null;
+        person.commandTargetId = null;
         const nearby = this.findNearestValidLocalCell(this.player.worldX, this.player.worldY, person.x, person.y);
         if (nearby) {
             person.x = nearby.localX;
@@ -3614,6 +3688,8 @@ export class Game {
         person.alertTimer = 0;
         person.hp = 0;
         person.hideGrave = true;
+        person.commandTargetType = null;
+        person.commandTargetId = null;
     }
 
     killNpc(person) {
@@ -3824,19 +3900,48 @@ export class Game {
             let targetDist = CONFIG.ZOMBIE_SIGHT_RADIUS;
             let targetIsAnimal = false;
 
-            for (const animal of animals) {
-                if (animal.isDead) continue;
-                if (!(animal.alwaysAggressive || animal.isProvoked)) continue;
-                const adx = animal.x - zombie.x;
-                const ady = animal.y - zombie.y;
-                const d = Math.hypot(adx, ady);
-                if (d > targetDist) continue;
-                if (!this.hasLineOfSight(this.player.worldX, this.player.worldY, grid, zombie.x, zombie.y, animal.x, animal.y)) {
-                    continue;
+            if (zombie.commandTargetType === 'animal') {
+                const commandedAnimal = animals.find((animal) =>
+                    !animal.isDead && animal.id === zombie.commandTargetId
+                );
+                if (commandedAnimal) {
+                    target = commandedAnimal;
+                    targetDist = Math.hypot(commandedAnimal.x - zombie.x, commandedAnimal.y - zombie.y);
+                    targetIsAnimal = true;
+                } else {
+                    zombie.commandTargetType = null;
+                    zombie.commandTargetId = null;
                 }
-                target = animal;
-                targetDist = d;
-                targetIsAnimal = true;
+            }
+
+            if (!target && zombie.commandTargetType === 'npc') {
+                const commandedNpc = people.find((person) =>
+                    !person.isDead && !person.isZombie && person.id === zombie.commandTargetId
+                );
+                if (commandedNpc) {
+                    target = commandedNpc;
+                    targetDist = Math.hypot(commandedNpc.x - zombie.x, commandedNpc.y - zombie.y);
+                } else {
+                    zombie.commandTargetType = null;
+                    zombie.commandTargetId = null;
+                }
+            }
+
+            if (!target) {
+                for (const animal of animals) {
+                    if (animal.isDead) continue;
+                    if (!(animal.alwaysAggressive || animal.isProvoked)) continue;
+                    const adx = animal.x - zombie.x;
+                    const ady = animal.y - zombie.y;
+                    const d = Math.hypot(adx, ady);
+                    if (d > targetDist) continue;
+                    if (!this.hasLineOfSight(this.player.worldX, this.player.worldY, grid, zombie.x, zombie.y, animal.x, animal.y)) {
+                        continue;
+                    }
+                    target = animal;
+                    targetDist = d;
+                    targetIsAnimal = true;
+                }
             }
 
             if (!target) {

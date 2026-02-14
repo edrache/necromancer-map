@@ -68,6 +68,11 @@ Each turn runs in this order:
   - Hover an NPC in range to get a sword cursor, then click to kill (creates a grave).
   - Hover a grave in range to get a dark‑magic cursor, then click to raise a zombie.
   - Cemetery graves outside city tiles can also be raised to zombies.
+  - NPCs and living animals have a `Zombie Attack` context action:
+    - The action is always visible in the context menu.
+    - It is disabled when there are no living zombies in the current world area.
+    - It works across the whole local area (no player proximity required).
+    - When used, all zombies in that area focus and attack the selected target.
   - Zombies move slower than the player, avoid obstacles, and attack nearby NPCs.
   - NPCs can witness murders and retaliate; “ALERT” appears above alerted NPCs.
 
